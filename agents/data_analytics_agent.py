@@ -1,10 +1,10 @@
 """
 Data Analytics Agent for querying user's analytics data via Athena.
 """
-from langchain.agents import AgentExecutor, create_openai_functions_agent
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from tools.athena_tools import (
     athena_query_tool,
     table_schema_tool,
@@ -59,10 +59,15 @@ Your role is to:
 5. Interpret results and provide clear, actionable insights
 
 Important guidelines:
-- ALWAYS include user_id in queries for data isolation
+- ALWAYS filter by user_id column (it's a partition column in all tables)
+- For Instagram queries about content timing/ordering:
+  * instagram_media has the 'timestamp' column (when content was posted)
+  * instagram_media_insights has metrics (reach, likes, comments, etc.)
+  * JOIN them on BOTH 'id' AND 'user_id' columns for proper isolation and performance
+  * Example: SELECT * FROM instagram_media m JOIN instagram_media_insights i ON m.id = i.id AND m.user_id = i.user_id WHERE m.user_id = '{user_id}'
 - Start by listing tables if you're unsure what data is available
 - Check table schemas before writing SQL
-- Write efficient SQL queries
+- Write efficient SQL queries using proper JOINs on both id and user_id
 - Provide context and interpretation with your results
 - Focus on actionable insights, not just raw numbers
 
@@ -77,7 +82,7 @@ Conversation Context: {context}
         )
 
         # Create agent
-        self.agent = create_openai_functions_agent(self.llm, self.tools, self.prompt)
+        self.agent = create_tool_calling_agent(self.llm, self.tools, self.prompt)
         self.agent_executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,

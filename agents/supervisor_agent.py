@@ -3,7 +3,7 @@ Supervisor Agent that routes queries to specialized agents.
 """
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from typing import Literal, Dict, Any
 from agents.data_analytics_agent import DataAnalyticsAgent
 from config.settings import settings

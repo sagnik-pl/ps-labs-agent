@@ -81,17 +81,19 @@ def list_available_tables() -> str:
 
 
 # LangChain tools
-athena_query_tool = Tool(
+from langchain_core.tools import StructuredTool
+
+athena_query_tool = StructuredTool.from_function(
+    func=execute_athena_query,
     name="execute_athena_query",
     description="Execute SQL query on Athena to fetch user's analytics data. Always include user_id for data isolation. Use this when you need to retrieve specific metrics or data from user's Instagram, Facebook, or Google Analytics data.",
-    func=lambda x: execute_athena_query(x["query"], x["user_id"]),
     args_schema=AthenaQueryInput,
 )
 
-table_schema_tool = Tool(
+table_schema_tool = StructuredTool.from_function(
+    func=get_table_schema,
     name="get_table_schema",
     description="Get the schema (column names and types) of a table from Glue Data Catalog. Use this before writing SQL queries to understand available columns.",
-    func=get_table_schema,
     args_schema=AthenaSchemaInput,
 )
 

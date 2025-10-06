@@ -2,7 +2,8 @@
 Main entry point for the Photosphere Labs Agent System.
 Simple CLI interface for testing.
 """
-from agents.supervisor_agent import SupervisorAgent
+from workflow import create_agent_workflow
+from langchain_core.messages import HumanMessage
 from utils.firebase_client import firebase_client
 import uuid
 
@@ -10,12 +11,13 @@ import uuid
 def main():
     """Main CLI interface for testing the agent system."""
     print("=" * 60)
-    print("Photosphere Labs Agent System")
+    print("Photosphere Labs Agent System (LangGraph)")
     print("=" * 60)
     print("\nInitializing agent system...")
 
-    # Initialize supervisor agent (using Claude by default)
-    supervisor = SupervisorAgent(use_anthropic=True)
+    # Initialize LangGraph workflow (using MemorySaver for now)
+    # Note: FirestoreCheckpointer needs more methods implemented
+    workflow = create_agent_workflow(checkpointer=None)  # Uses MemorySaver by default
     print("✓ Agent system initialized")
 
     # Get user ID
@@ -59,17 +61,53 @@ def main():
             except Exception as e:
                 print(f"Warning: Could not save message to Firestore: {e}")
 
-            # Process query with supervisor agent
-            print("\n[Agent] Processing...")
-            result = supervisor.process_query(query, user_id, context)
+            # Prepare state for LangGraph workflow
+            initial_state = {
+                "user_id": user_id,
+                "conversation_id": conversation_id,
+                "query": query,
+                "context": context,
+                "messages": [HumanMessage(content=query)],
+                "agent_results": {},
+                "metadata": {},
+                "needs_retry": False,
+                "retry_count": 0,
+                "interpretation_retry_count": 0,
+                "sql_retry_count": 0,
+            }
+
+            # Process query with LangGraph workflow
+            print("\n[Agent] 🤔 Planning Task...")
+
+            # Configure for checkpointing
+            config = {
+                "configurable": {
+                    "thread_id": conversation_id
+                }
+            }
+
+            try:
+                result = workflow.invoke(initial_state, config=config)
+            except Exception as workflow_error:
+                print(f"\n[Workflow Error] {str(workflow_error)}")
+                print("\nFull traceback:")
+                import traceback
+                traceback.print_exc()
+                continue
+
+            # Extract final response
+            final_response = result.get("final_response", "No response generated")
 
             # Display response
-            print(f"\n[Agent] {result['response']}")
+            print(f"\n[Agent] {final_response}")
 
             # Show metadata in verbose mode
-            if result.get("agent_used"):
-                print(f"\n[Metadata] Agent used: {result['agent_used']}")
-                print(f"[Metadata] Routing: {result['routing_decision']['reasoning']}")
+            metadata = result.get("metadata", {})
+            if metadata:
+                routing = metadata.get("routing")
+                if routing:
+                    print(f"\n[Metadata] Agent used: {routing.get('primary_agent')}")
+                    print(f"[Metadata] Routing: {routing.get('reasoning')}")
 
             # Save agent response to Firestore
             try:
@@ -77,8 +115,8 @@ def main():
                     user_id,
                     conversation_id,
                     "assistant",
-                    result["response"],
-                    metadata=result.get("routing_decision"),
+                    final_response,
+                    metadata=metadata,
                 )
             except Exception as e:
                 print(f"Warning: Could not save response to Firestore: {e}")
@@ -88,6 +126,9 @@ def main():
             break
         except Exception as e:
             print(f"\n[Error] {str(e)}")
+            print("\n[Error Details]")
+            import traceback
+            traceback.print_exc()
 
     print("\nGoodbye!")
 

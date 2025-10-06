@@ -24,6 +24,7 @@ class AWSClient:
         return connect(
             s3_staging_dir=settings.athena_s3_output_location,
             region_name=settings.aws_region,
+            schema_name=settings.glue_database,
             cursor_class=PandasCursor,
             aws_access_key_id=settings.aws_access_key_id,
             aws_secret_access_key=settings.aws_secret_access_key,
@@ -50,11 +51,8 @@ class AWSClient:
 
     def execute_query(self, query: str, user_id: str = None):
         """Execute Athena query and return results as pandas DataFrame."""
-        # Add user_id filter if provided for data isolation
-        if user_id and "WHERE" not in query.upper():
-            query = f"{query} WHERE user_id = '{user_id}'"
-        elif user_id:
-            query = query.replace("WHERE", f"WHERE user_id = '{user_id}' AND")
+        # The agent is responsible for adding user_id filters in queries
+        # We don't add it automatically to avoid ambiguity with table aliases
 
         conn = self.get_athena_connection()
         cursor = conn.cursor()

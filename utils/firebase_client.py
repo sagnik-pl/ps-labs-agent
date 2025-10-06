@@ -7,6 +7,9 @@ from typing import List, Dict, Any, Optional
 from config.settings import settings
 import boto3
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class FirebaseClient:
@@ -39,6 +42,10 @@ class FirebaseClient:
         firebase_admin.initialize_app(cred)
         self.db = firestore.client()
 
+    def get_user_doc_ref(self, user_id: str):
+        """Get Firestore reference to user document."""
+        return self.db.collection("conversations").document(user_id)
+
     def get_conversation_ref(self, user_id: str, conversation_id: str):
         """Get Firestore reference to a conversation."""
         return self.db.collection("conversations").document(user_id).collection(
@@ -64,29 +71,62 @@ class FirebaseClient:
         role: str,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
+        title: Optional[str] = None,
     ):
         """Save a message to conversation history."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+
+        # Ensure user document exists (prevent ghost document)
+        user_doc_ref = self.get_user_doc_ref(user_id)
+        user_doc = user_doc_ref.get()
+        if not user_doc.exists:
+            user_doc_ref.set({
+                "user_id": user_id,
+                "created_at": now,
+                "last_updated": now
+            })
+        else:
+            user_doc_ref.update({"last_updated": now})
+
+        # Save message to conversation
         conv_ref = self.get_conversation_ref(user_id, conversation_id)
         doc = conv_ref.get()
 
         message = {
             "role": role,
             "content": content,
-            "timestamp": firestore.SERVER_TIMESTAMP,
+            "timestamp": now,
             "metadata": metadata or {},
         }
 
+        # Create last_message preview (first 50 chars)
+        last_message_preview = content[:50] + "..." if len(content) > 50 else content
+
         if doc.exists:
-            conv_ref.update({"messages": firestore.ArrayUnion([message])})
+            # Update existing conversation
+            update_data = {
+                "messages": firestore.ArrayUnion([message]),
+                "last_updated": now,
+                "last_message": last_message_preview
+            }
+            conv_ref.update(update_data)
         else:
-            conv_ref.set(
-                {
-                    "user_id": user_id,
-                    "conversation_id": conversation_id,
-                    "created_at": firestore.SERVER_TIMESTAMP,
-                    "messages": [message],
-                }
-            )
+            # Create new conversation
+            conv_data = {
+                "user_id": user_id,
+                "conversation_id": conversation_id,
+                "created_at": now,
+                "last_updated": now,
+                "messages": [message],
+                "last_message": last_message_preview
+            }
+            # Add title if provided (for first message)
+            if title:
+                conv_data["title"] = title
+
+            conv_ref.set(conv_data)
 
     def get_context_summary(self, user_id: str, conversation_id: str) -> str:
         """Get a summary of conversation context for agent use."""
@@ -105,6 +145,135 @@ class FirebaseClient:
             formatted.append(f"{role}: {content}")
 
         return "\n".join(formatted)
+
+    def get_conversations(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all conversations for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of conversations with metadata (sorted by last updated)
+        """
+        try:
+            # Query all conversations for this user
+            chats_ref = self.db.collection("conversations").document(user_id).collection("chats")
+            conversations = []
+
+            for doc in chats_ref.stream():
+                data = doc.to_dict()
+
+                # Format dates as yyyy/mm/dd
+                created_at = data.get("created_at")
+                created_at_formatted = created_at.strftime("%Y/%m/%d") if created_at else None
+
+                last_updated = data.get("last_updated", created_at)
+                last_updated_formatted = last_updated.strftime("%Y/%m/%d") if last_updated else None
+
+                conversations.append({
+                    "conversation_id": doc.id,
+                    "title": data.get("title", f"Conversation {doc.id[:8]}"),
+                    "created_at": created_at_formatted,
+                    "updated_at": last_updated_formatted,
+                    "message_count": len(data.get("messages", [])),
+                    "last_message": data.get("last_message", self._get_conversation_preview(data.get("messages", [])))
+                })
+
+            # Sort by last updated (most recent first)
+            conversations.sort(
+                key=lambda x: x.get("updated_at") or x.get("created_at") or "",
+                reverse=True
+            )
+
+            return conversations
+
+        except Exception as e:
+            logger.error(f"Error fetching conversations for user {user_id}: {e}")
+            return []
+
+    def get_conversation_messages(
+        self, user_id: str, conversation_id: str, limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Get messages from a conversation.
+
+        Args:
+            user_id: User ID
+            conversation_id: Conversation ID
+            limit: Maximum number of messages to return (default: 50)
+
+        Returns:
+            List of messages (most recent last) with ISO format timestamps
+        """
+        try:
+            messages = self.get_conversation_history(user_id, conversation_id)
+
+            # Return last N messages
+            if len(messages) > limit:
+                messages = messages[-limit:]
+
+            # Convert Firestore timestamps to ISO format strings
+            formatted_messages = []
+            for msg in messages:
+                formatted_msg = {
+                    "role": msg.get("role"),
+                    "content": msg.get("content"),
+                    "timestamp": msg.get("timestamp").isoformat() if hasattr(msg.get("timestamp"), 'isoformat') else msg.get("timestamp"),
+                    "metadata": msg.get("metadata", {})
+                }
+                formatted_messages.append(formatted_msg)
+
+            return formatted_messages
+
+        except Exception as e:
+            logger.error(f"Error fetching messages for conversation {conversation_id}: {e}")
+            return []
+
+    def is_new_conversation(self, user_id: str, conversation_id: str) -> bool:
+        """
+        Check if a conversation is new (has no messages yet).
+
+        Args:
+            user_id: User ID
+            conversation_id: Conversation ID
+
+        Returns:
+            True if conversation is new, False otherwise
+        """
+        conv_ref = self.get_conversation_ref(user_id, conversation_id)
+        doc = conv_ref.get()
+        return not doc.exists
+
+    def _get_conversation_preview(self, messages: List[Dict[str, Any]]) -> str:
+        """
+        Get a preview of the conversation (first user message).
+
+        Args:
+            messages: List of messages
+
+        Returns:
+            Preview text (truncated to 100 chars)
+        """
+        if not messages:
+            return "Empty conversation"
+
+        # Find first user message
+        for msg in messages:
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if len(content) > 100:
+                    return content[:97] + "..."
+                return content
+
+        # Fallback to first message
+        if messages:
+            content = messages[0].get("content", "Empty conversation")
+            if len(content) > 100:
+                return content[:97] + "..."
+            return content
+
+        return "Empty conversation"
 
 
 # Global instance

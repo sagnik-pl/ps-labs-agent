@@ -1,76 +1,124 @@
 # Photosphere Labs Agent System
 
-Multi-agent system for actionable e-commerce insights using natural language queries.
+Multi-agent system for natural language analytics with real-time streaming responses.
 
-## Setup
+## Overview
 
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+This system provides an intelligent conversational interface for data analytics using a multi-agent architecture. It processes natural language queries, retrieves data from various sources, and returns actionable insights with context and recommendations.
 
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
+## Features
 
-3. **Set up Firebase (AWS Secrets Manager):**
-   - Firebase credentials are stored in AWS Secrets Manager
-   - Secrets: `ps-labs-firebase-dev` and `ps-labs-firebase-prod`
-   - The application automatically fetches credentials at runtime
-   - Secret names configured in `.env` as `FIREBASE_SECRET_NAME_DEV` and `FIREBASE_SECRET_NAME_PROD`
+- **Real-time WebSocket Communication** - Streaming progress updates and responses
+- **Multi-Agent Architecture** - Specialized agents for planning, data retrieval, and interpretation
+- **Conversation Management** - Persistent conversation history with auto-generated titles
+- **Data Source Integration** - AWS Athena, Glue Data Catalog, and extensible for other sources
+- **Context-Aware Responses** - Domain knowledge integration and benchmarking
 
-4. **Configure AWS:**
-   - Ensure AWS credentials have access to Athena and Glue Data Catalog
-   - Set Athena output S3 bucket locations for dev and prod:
-     - `ATHENA_S3_OUTPUT_LOCATION_DEV`
-     - `ATHENA_S3_OUTPUT_LOCATION_PROD`
-   - Set Glue database names:
-     - `GLUE_DATABASE_DEV`
-     - `GLUE_DATABASE_PROD`
+## Quick Start
 
-5. **Switch environments:**
-   - Set `ENVIRONMENT=development` for dev (default)
-   - Set `ENVIRONMENT=production` for prod
-
-## Usage
-
-### CLI Interface (for testing)
+### Installation
 
 ```bash
-# Activate virtual environment
+# Create virtual environment
+python3 -m venv agent_venv
 source agent_venv/bin/activate
 
-# Run the CLI interface
-python main.py
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-### API Server
+### Configuration
 
 ```bash
-# Activate virtual environment
-source agent_venv/bin/activate
+# Copy environment template
+cp .env.example .env
 
-# Run the FastAPI server
-python api.py
-
-# Or with uvicorn directly
-uvicorn api:app --reload --host 0.0.0.0 --port 8000
+# Configure required environment variables
+# - OpenAI API key
+# - Firebase credentials (via AWS Secrets Manager)
+# - AWS credentials (Athena, S3)
+# - Environment settings (development/production)
 ```
 
-### API Endpoints
+### Running the Server
 
-- `POST /chat` - Send a chat message
-  ```json
-  {
-    "user_id": "user123",
-    "message": "Show me my Instagram engagement metrics",
-    "conversation_id": "optional-conversation-id"
-  }
-  ```
-- `GET /health` - Health check endpoint
+```bash
+# Activate environment
+source agent_venv/bin/activate
+
+# Start WebSocket API server
+python api_websocket.py
+
+# Server runs on http://localhost:8000
+```
+
+## API Documentation
+
+### WebSocket Endpoint
+
+**Connect:** `ws://localhost:8000/ws/{user_id}/{conversation_id}`
+
+**Send Message:**
+```json
+{
+  "query": "Your question here",
+  "conversation_id": "conv-123"
+}
+```
+
+**Receive Events:**
+- `started` - Query processing started
+- `progress` - Progress updates with stage information
+- `conversation_metadata` - Conversation title and date
+- `completed` - Final response with insights
+- `error` - Error information
+
+### REST Endpoints
+
+- `GET /` - Health check
+- `GET /conversations/{user_id}` - List user conversations
+- `GET /conversations/{user_id}/{conversation_id}/messages` - Get conversation messages
 
 ## Architecture
 
-See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
+The system uses a LangGraph-based multi-agent workflow:
+
+1. **Planner** - Analyzes query and creates execution plan
+2. **Router** - Determines which agents to invoke
+3. **Data Retrieval** - SQL generation, validation, and execution
+4. **Interpretation** - Analyzes data with domain knowledge and provides insights
+5. **Validation** - Quality control for SQL and interpretations
+
+For detailed architecture documentation, see [CLAUDE.md](CLAUDE.md).
+
+## Development
+
+### Environment Variables
+
+Key configuration options:
+- `ENVIRONMENT` - `development` or `production`
+- `OPENAI_API_KEY` - OpenAI API key for LLM
+- `FIREBASE_SECRET_NAME` - AWS Secrets Manager secret name
+- `AWS_REGION` - AWS region for services
+- `GLUE_DATABASE` - AWS Glue database name
+- `ATHENA_S3_OUTPUT_LOCATION` - S3 path for Athena results
+
+### Testing
+
+```bash
+# Test WebSocket connection
+python test_websocket.py
+
+# Run with specific query
+python main.py
+```
+
+## Documentation
+
+- [CLAUDE.md](CLAUDE.md) - Complete architecture and codebase documentation
+- [API_DOCUMENTATION.md](API_DOCUMENTATION.md) - API reference and examples
+- [FRONTEND_INTEGRATION_PLAN.md](FRONTEND_INTEGRATION_PLAN.md) - Frontend integration guide
+
+## License
+
+Proprietary - Photosphere Labs
