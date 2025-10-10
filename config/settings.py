@@ -13,29 +13,29 @@ class Settings(BaseSettings):
         extra="ignore"
     )
     # LLM Provider
-    openai_api_key: Optional[str] = Field(default=None, validation_alias='OPENAI_API_KEY')
-    anthropic_api_key: Optional[str] = Field(default=None, validation_alias='ANTHROPIC_API_KEY')
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
 
     # AWS Configuration
-    aws_access_key_id: str = Field(validation_alias='AWS_ACCESS_KEY_ID')
-    aws_secret_access_key: str = Field(validation_alias='AWS_SECRET_ACCESS_KEY')
-    aws_region: str = Field(validation_alias='AWS_REGION')
+    aws_access_key_id: str
+    aws_secret_access_key: str
+    aws_region: str
 
     # Athena S3 Output - Development
-    athena_s3_output_location_dev: str = Field(validation_alias='ATHENA_S3_OUTPUT_LOCATION_DEV')
-    glue_database_dev: str = Field(validation_alias='GLUE_DATABASE_DEV')
+    athena_s3_output_location_dev: str
+    glue_database_dev: str
 
     # Athena S3 Output - Production
-    athena_s3_output_location_prod: str = Field(validation_alias='ATHENA_S3_OUTPUT_LOCATION_PROD')
-    glue_database_prod: str = Field(validation_alias='GLUE_DATABASE_PROD')
+    athena_s3_output_location_prod: str
+    glue_database_prod: str
 
     # Firebase - AWS Secrets Manager
-    firebase_secret_name_dev: str = Field(validation_alias='FIREBASE_SECRET_NAME_DEV')
-    firebase_secret_name_prod: str = Field(validation_alias='FIREBASE_SECRET_NAME_PROD')
+    firebase_secret_name_dev: str
+    firebase_secret_name_prod: str
 
     # Application
-    environment: str = Field(default="development", validation_alias='ENVIRONMENT')
-    log_level: str = Field(default="INFO", validation_alias='LOG_LEVEL')
+    environment: str = "development"
+    log_level: str = "INFO"
 
     @property
     def athena_s3_output_location(self) -> str:
