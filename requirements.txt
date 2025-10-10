@@ -23,8 +23,8 @@ numpy==1.26.3
 
 # Utilities
 python-dotenv==1.0.1
-pydantic==2.5.3
-pydantic-settings==2.1.0
+pydantic==2.7.4
+pydantic-settings==2.5.0
 
 # Development
 pytest==7.4.4
