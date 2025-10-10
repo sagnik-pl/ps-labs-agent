@@ -6,6 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 import os
 
+# DEBUG: Print all environment variables to see what Railway is providing
+print("=" * 80)
+print("ENVIRONMENT VARIABLES AVAILABLE:")
+for key, value in os.environ.items():
+    if any(x in key.upper() for x in ['AWS', 'ATHENA', 'GLUE', 'FIREBASE', 'OPENAI', 'ANTHROPIC']):
+        print(f"{key} = {value[:20]}..." if len(value) > 20 else f"{key} = {value}")
+print("=" * 80)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
