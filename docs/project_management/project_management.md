@@ -1,9 +1,9 @@
 # Project Management - Task Backlog
 ## ps-labs-agent Multi-Agent Analytics System
 
-**Last Updated**: 2025-10-06
+**Last Updated**: 2025-10-11
 **Source**: [vulns_and_issues.md](vulns_and_issues.md)
-**Total Tasks**: 43
+**Total Tasks**: 44
 
 ---
 
@@ -15,7 +15,7 @@ This document tracks all tasks identified from the security and code quality ana
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| **P0 - CRITICAL** | 3 | Security vulnerabilities requiring immediate action |
+| **P0 - CRITICAL** | 4 | Security vulnerabilities requiring immediate action |
 | **P1 - HIGH** | 15 | Critical security and quality issues for current sprint |
 | **P2 - MEDIUM** | 22 | Important improvements for next sprint |
 | **P3 - LOW** | 3 | Nice-to-have improvements for backlog |
@@ -24,7 +24,7 @@ This document tracks all tasks identified from the security and code quality ana
 
 | Type | Count | Description |
 |------|-------|-------------|
-| 🔒 **Security** | 12 | Security vulnerabilities and improvements |
+| 🔒 **Security** | 13 | Security vulnerabilities and improvements |
 | 🐛 **Bug** | 7 | Code quality and error handling issues |
 | ⚙️ **Tech Debt** | 10 | Technical debt and refactoring needs |
 | 🏗️ **Architecture** | 7 | Architectural improvements |
@@ -43,8 +43,93 @@ This document tracks all tasks identified from the security and code quality ana
 | **SEC-001** | Rotate all exposed API keys and AWS credentials | 🔒 Security | CRITICAL | 2h | ⬜ Todo | None |
 | **SEC-002** | Implement JWT authentication on WebSocket endpoints | 🔒 Security | CRITICAL | 8h | ⬜ Todo | SEC-001 |
 | **SEC-003** | Add authentication to REST API endpoints | 🔒 Security | CRITICAL | 4h | ⬜ Todo | SEC-002 |
+| **SEC-013** | Secure Railway production deployment | 🔒 Security | CRITICAL | 6h | ⬜ Todo | SEC-001, SEC-002, SEC-003 |
 
 **Sprint Goal**: Secure all API endpoints and rotate compromised credentials
+
+#### SEC-013 Details: Production API Security (Railway Deployment)
+
+**Current State**: ⚠️ Railway deployment at `https://ps-labs-agent-backend-production.up.railway.app/` is **publicly accessible** without authentication.
+
+**Vulnerabilities Identified**:
+
+1. **No Authentication** (CRITICAL)
+   - Anyone can connect to WebSocket if they know/guess a `user_id`
+   - No token or session validation
+   - Risk: Unauthorized access to any user's data
+
+2. **No Authorization** (CRITICAL)
+   - No checks on who can access which conversations
+   - Any request with a valid `user_id` can read all conversations
+   - Risk: Data breach, privacy violation
+
+3. **CORS Wide Open** (HIGH)
+   - `allow_origins=["*"]` allows any website to call the API
+   - Risk: CSRF attacks, malicious websites can make requests on behalf of users
+   - **Fix**: `allow_origins=["https://your-frontend-domain.com"]`
+
+4. **Data Exposure** (CRITICAL)
+   - Endpoints exposing user data without authentication:
+     - `GET /conversations/{user_id}` - Read all conversations
+     - `GET /conversations/{user_id}/{conversation_id}/messages` - Read all messages
+     - `WS /ws/{user_id}/{session_id}` - Send queries on behalf of user
+   - Risk: Anyone with a user_id can read/write their data
+
+5. **No Rate Limiting** (HIGH)
+   - Risk: DoS attacks, abuse, excessive costs
+
+**Required Fixes** (Post-Demo):
+
+```python
+# 1. Add JWT Authentication
+@app.websocket("/ws/{user_id}/{session_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    user_id: str,
+    session_id: str,
+    token: str = Depends(verify_jwt_token)  # NEW
+):
+    # Verify token user_id matches request user_id
+    if token.user_id != user_id:
+        raise HTTPException(403, "Unauthorized")
+    # ... existing code
+
+# 2. Restrict CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://ps-labs-app.vercel.app"],  # Only frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 3. Add Rate Limiting
+from slowapi import Limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.get("/conversations/{user_id}")
+@limiter.limit("10/minute")  # 10 requests per minute
+async def get_conversations(user_id: str, token: str = Depends(verify_jwt_token)):
+    # Verify token
+    if token.user_id != user_id:
+        raise HTTPException(403)
+    # ... existing code
+```
+
+**Implementation Priority**:
+1. ✅ **DONE**: Set `ENVIRONMENT=production` in Railway (Firebase connection fixed)
+2. ⬜ **Post-Demo**: Rotate credentials (SEC-001)
+3. ⬜ **Post-Demo**: Implement JWT auth (SEC-002, SEC-003)
+4. ⬜ **Post-Demo**: Fix CORS configuration
+5. ⬜ **Post-Demo**: Add rate limiting
+
+**For Demo**: Current setup acceptable if:
+- Using test/demo data only
+- URL not shared publicly
+- User IDs are UUIDs (not predictable sequential IDs)
+
+**Effort Estimate**: 6 hours (depends on SEC-001, SEC-002, SEC-003 completion)
 
 ---
 
@@ -142,8 +227,8 @@ This document tracks all tasks identified from the security and code quality ana
 
 #### Sprint 0 (Week 1) - EMERGENCY
 - **Focus**: Critical security fixes
-- **Tasks**: SEC-001, SEC-002, SEC-003
-- **Effort**: 14 hours
+- **Tasks**: SEC-001, SEC-002, SEC-003, SEC-013
+- **Effort**: 20 hours
 - **Team**: 1 senior engineer
 
 #### Sprint 1 (Weeks 2-3)
@@ -181,7 +266,8 @@ SEC-001 (Rotate credentials)
   ├── SEC-002 (WebSocket auth)
   │     ├── SEC-003 (REST auth)
   │     │     ├── SEC-004 (CORS fix)
-  │     │     └── SEC-010 (Rate limiting)
+  │     │     ├── SEC-010 (Rate limiting)
+  │     │     └── SEC-013 (Secure Railway deployment)
   │     └── ...
   └── SEC-008 (Remove hardcoded creds)
 
@@ -211,17 +297,17 @@ CONF-001 (Env validation)
 
 | Priority | Total Hours | Sprints (2-week) | Engineers Needed |
 |----------|-------------|------------------|------------------|
-| P0 | 14h | 0.5 | 1 |
+| P0 | 20h | 0.5 | 1 |
 | P1 | 56h | 1.5 | 2 |
 | P2 | 158h | 4 | 2-3 |
 | P3 | 141h | 3.5 | 1-2 |
-| **Total** | **369h** | **~9.5 sprints** | **2-3** |
+| **Total** | **375h** | **~9.5 sprints** | **2-3** |
 
 ### By Type
 
 | Type | Count | Total Hours | Avg Hours/Task |
 |------|-------|-------------|----------------|
-| 🔒 Security | 12 | 66h | 5.5h |
+| 🔒 Security | 13 | 72h | 5.5h |
 | 🐛 Bug/Quality | 7 | 48h | 6.8h |
 | ⚙️ Tech Debt | 10 | 78h | 7.8h |
 | 🏗️ Architecture | 7 | 116h | 16.6h |
@@ -239,6 +325,7 @@ CONF-001 (Env validation)
 |----|------|--------|------------|
 | SEC-001 | Credentials already compromised | CRITICAL | Rotate immediately, check AWS CloudTrail for unauthorized access |
 | SEC-002/003 | Production system vulnerable | CRITICAL | Implement auth ASAP, consider temporary IP whitelist |
+| SEC-013 | Railway production API publicly accessible | CRITICAL | Use only test data until auth implemented, don't share URL publicly |
 | TEST-001 | No test coverage = regression risk | HIGH | Write tests alongside refactoring, not after |
 | ARCH-003 | Large refactor may introduce bugs | HIGH | Incremental changes, feature flags, canary deployments |
 | DEBT-002 | DI refactor touches entire codebase | HIGH | Use adapter pattern for gradual migration |
@@ -349,4 +436,16 @@ CONF-001 (Env validation)
 
 **Document Status**: Active
 **Next Review**: Weekly during sprints
-**Last Updated**: 2025-10-06
+**Last Updated**: 2025-10-11
+
+---
+
+## Recent Updates
+
+### 2025-10-11
+- **Added SEC-013**: Railway production deployment security
+  - Documented 5 critical vulnerabilities in production deployment
+  - Added JWT authentication implementation guide
+  - Added CORS and rate limiting fixes
+  - Status: Firestore connection fixed (ENVIRONMENT=production set)
+  - Post-demo action required: Implement full authentication stack
