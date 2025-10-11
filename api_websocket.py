@@ -299,6 +299,46 @@ async def root():
     }
 
 
+@app.get("/debug/config")
+async def debug_config():
+    """Debug endpoint to check configuration."""
+    from config.settings import settings
+
+    return {
+        "environment": settings.environment,
+        "firebase_secret_name": settings.firebase_secret_name,
+        "firebase_secret_dev": settings.firebase_secret_name_dev,
+        "firebase_secret_prod": settings.firebase_secret_name_prod,
+        "aws_region": settings.aws_region,
+        "glue_database": settings.glue_database,
+        "athena_s3_output": settings.athena_s3_output_location,
+    }
+
+
+@app.get("/debug/firebase-test")
+async def test_firebase():
+    """Test Firebase connection by attempting a simple read."""
+    try:
+        # Try to list conversations for a test user
+        test_user_id = "test_debug_user"
+        conversations = firebase_client.get_conversations(test_user_id)
+
+        return {
+            "status": "success",
+            "message": "Firebase connection working",
+            "test_user_id": test_user_id,
+            "conversations_found": len(conversations)
+        }
+    except Exception as e:
+        logger.error(f"Firebase test failed: {e}")
+        import traceback
+        return {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 @app.get("/conversations/{user_id}")
 async def get_conversations(user_id: str):
     """

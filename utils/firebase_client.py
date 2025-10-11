@@ -20,6 +20,12 @@ class FirebaseClient:
         secret_name = settings.firebase_secret_name
         region_name = settings.aws_region
 
+        logger.info("=" * 80)
+        logger.info(f"Initializing Firebase with environment: {settings.environment}")
+        logger.info(f"Using Firebase secret: {secret_name}")
+        logger.info(f"AWS Region: {region_name}")
+        logger.info("=" * 80)
+
         # Create a Secrets Manager client
         session = boto3.session.Session()
         client = session.client(
@@ -31,16 +37,25 @@ class FirebaseClient:
 
         # Retrieve the secret
         try:
+            logger.info(f"Attempting to fetch secret: {secret_name}")
             get_secret_value_response = client.get_secret_value(SecretId=secret_name)
             secret_string = get_secret_value_response['SecretString']
             firebase_creds = json.loads(secret_string)
+            logger.info("✅ Successfully retrieved Firebase credentials from Secrets Manager")
         except Exception as e:
+            logger.error(f"❌ Error retrieving Firebase credentials from Secrets Manager: {str(e)}")
             raise Exception(f"Error retrieving Firebase credentials from Secrets Manager: {str(e)}")
 
         # Initialize Firebase Admin SDK
-        cred = credentials.Certificate(firebase_creds)
-        firebase_admin.initialize_app(cred)
-        self.db = firestore.client()
+        try:
+            cred = credentials.Certificate(firebase_creds)
+            firebase_admin.initialize_app(cred)
+            self.db = firestore.client()
+            logger.info("✅ Firebase Admin SDK initialized successfully")
+            logger.info(f"Firestore client created: {self.db is not None}")
+        except Exception as e:
+            logger.error(f"❌ Error initializing Firebase Admin SDK: {str(e)}")
+            raise Exception(f"Error initializing Firebase Admin SDK: {str(e)}")
 
     def get_user_doc_ref(self, user_id: str):
         """Get Firestore reference to user document."""
@@ -76,57 +91,72 @@ class FirebaseClient:
         """Save a message to conversation history."""
         from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc)
+        try:
+            now = datetime.now(timezone.utc)
 
-        # Ensure user document exists (prevent ghost document)
-        user_doc_ref = self.get_user_doc_ref(user_id)
-        user_doc = user_doc_ref.get()
-        if not user_doc.exists:
-            user_doc_ref.set({
-                "user_id": user_id,
-                "created_at": now,
-                "last_updated": now
-            })
-        else:
-            user_doc_ref.update({"last_updated": now})
+            logger.info(f"Attempting to save message: user={user_id[:8]}..., conv={conversation_id[:8]}..., role={role}")
 
-        # Save message to conversation
-        conv_ref = self.get_conversation_ref(user_id, conversation_id)
-        doc = conv_ref.get()
+            # Ensure user document exists (prevent ghost document)
+            user_doc_ref = self.get_user_doc_ref(user_id)
+            user_doc = user_doc_ref.get()
+            if not user_doc.exists:
+                logger.info(f"Creating new user document for {user_id[:8]}...")
+                user_doc_ref.set({
+                    "user_id": user_id,
+                    "created_at": now,
+                    "last_updated": now
+                })
+            else:
+                logger.info(f"Updating existing user document for {user_id[:8]}...")
+                user_doc_ref.update({"last_updated": now})
 
-        message = {
-            "role": role,
-            "content": content,
-            "timestamp": now,
-            "metadata": metadata or {},
-        }
+            # Save message to conversation
+            conv_ref = self.get_conversation_ref(user_id, conversation_id)
+            doc = conv_ref.get()
 
-        # Create last_message preview (first 50 chars)
-        last_message_preview = content[:50] + "..." if len(content) > 50 else content
-
-        if doc.exists:
-            # Update existing conversation
-            update_data = {
-                "messages": firestore.ArrayUnion([message]),
-                "last_updated": now,
-                "last_message": last_message_preview
+            message = {
+                "role": role,
+                "content": content,
+                "timestamp": now,
+                "metadata": metadata or {},
             }
-            conv_ref.update(update_data)
-        else:
-            # Create new conversation
-            conv_data = {
-                "user_id": user_id,
-                "conversation_id": conversation_id,
-                "created_at": now,
-                "last_updated": now,
-                "messages": [message],
-                "last_message": last_message_preview
-            }
-            # Add title if provided (for first message)
-            if title:
-                conv_data["title"] = title
 
-            conv_ref.set(conv_data)
+            # Create last_message preview (first 50 chars)
+            last_message_preview = content[:50] + "..." if len(content) > 50 else content
+
+            if doc.exists:
+                # Update existing conversation
+                logger.info(f"Updating existing conversation {conversation_id[:8]}...")
+                update_data = {
+                    "messages": firestore.ArrayUnion([message]),
+                    "last_updated": now,
+                    "last_message": last_message_preview
+                }
+                conv_ref.update(update_data)
+            else:
+                # Create new conversation
+                logger.info(f"Creating new conversation {conversation_id[:8]}... with title: {title}")
+                conv_data = {
+                    "user_id": user_id,
+                    "conversation_id": conversation_id,
+                    "created_at": now,
+                    "last_updated": now,
+                    "messages": [message],
+                    "last_message": last_message_preview
+                }
+                # Add title if provided (for first message)
+                if title:
+                    conv_data["title"] = title
+
+                conv_ref.set(conv_data)
+
+            logger.info(f"✅ Successfully saved {role} message to Firestore")
+
+        except Exception as e:
+            logger.error(f"❌ Error saving message to Firestore: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
     def get_context_summary(self, user_id: str, conversation_id: str) -> str:
         """Get a summary of conversation context for agent use."""

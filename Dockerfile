@@ -17,12 +17,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port
+# Expose port (Railway will assign via PORT env var)
 EXPOSE 8000
 
-# Health check
+# Health check - use PORT env var if set, otherwise default to 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/ || exit 1
+  CMD curl -f http://localhost:${PORT:-8000}/ || exit 1
 
-# Run application
-CMD ["uvicorn", "api_websocket:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
+# Run application - use PORT env var if set, otherwise default to 8000
+CMD uvicorn api_websocket:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info

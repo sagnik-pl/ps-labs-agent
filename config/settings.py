@@ -10,8 +10,10 @@ import os
 print("=" * 80)
 print("ENVIRONMENT VARIABLES AVAILABLE:")
 for key, value in os.environ.items():
-    if any(x in key.upper() for x in ['AWS', 'ATHENA', 'GLUE', 'FIREBASE', 'OPENAI', 'ANTHROPIC']):
+    if any(x in key.upper() for x in ['AWS', 'ATHENA', 'GLUE', 'FIREBASE', 'OPENAI', 'ANTHROPIC', 'ENVIRONMENT']):
         print(f"{key} = {value[:20]}..." if len(value) > 20 else f"{key} = {value}")
+print("=" * 80)
+print(f"DETECTED ENVIRONMENT: {os.getenv('ENVIRONMENT', 'development')}")
 print("=" * 80)
 
 
