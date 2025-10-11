@@ -4,6 +4,7 @@ Firebase client utilities for conversation context management.
 import firebase_admin
 from firebase_admin import credentials, firestore
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 from config.settings import settings
 import boto3
 import json
@@ -194,27 +195,33 @@ class FirebaseClient:
             for doc in chats_ref.stream():
                 data = doc.to_dict()
 
-                # Format dates as yyyy/mm/dd
+                # Get timestamps (return full timestamp for proper sorting)
                 created_at = data.get("created_at")
-                created_at_formatted = created_at.strftime("%Y/%m/%d") if created_at else None
-
                 last_updated = data.get("last_updated", created_at)
-                last_updated_formatted = last_updated.strftime("%Y/%m/%d") if last_updated else None
+
+                # Convert Firestore timestamps to ISO format strings
+                created_at_str = created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None
+                last_updated_str = last_updated.isoformat() if hasattr(last_updated, 'isoformat') else str(last_updated) if last_updated else None
 
                 conversations.append({
                     "conversation_id": doc.id,
                     "title": data.get("title", f"Conversation {doc.id[:8]}"),
-                    "created_at": created_at_formatted,
-                    "updated_at": last_updated_formatted,
+                    "created_at": created_at_str,
+                    "updated_at": last_updated_str,
                     "message_count": len(data.get("messages", [])),
-                    "last_message": data.get("last_message", self._get_conversation_preview(data.get("messages", [])))
+                    "last_message": data.get("last_message", self._get_conversation_preview(data.get("messages", []))),
+                    "_sort_timestamp": last_updated or created_at  # Store for sorting
                 })
 
-            # Sort by last updated (most recent first)
+            # Sort by last updated timestamp (most recent first)
             conversations.sort(
-                key=lambda x: x.get("updated_at") or x.get("created_at") or "",
+                key=lambda x: x.get("_sort_timestamp") or datetime.min,
                 reverse=True
             )
+
+            # Remove the sorting helper field before returning
+            for conv in conversations:
+                conv.pop("_sort_timestamp", None)
 
             return conversations
 
