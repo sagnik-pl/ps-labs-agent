@@ -4,13 +4,37 @@ Add remaining 33 tasks to Jira (P2 and P3 tasks).
 """
 import requests
 import time
+import os
+from pathlib import Path
 from typing import Dict, Optional
 
 # Jira Configuration
-JIRA_EMAIL = "sagnik@photospherelabs.com"
-JIRA_TOKEN = "ATATT3xFfGF0ZwcHnEAlPK5lOJmcG5d9F0vLR99bky9NK0J5meRY5YICJL-13ybOC4iorIASRJuiujJO8z14pjzb1nATQNwbwDS9Cv2FWrfQOzMlMLepk93rNXl5nATduTKkUO1i86OkaLCuWs3IWM5TSaUAN9y18EKO9oxlnJUQZiG9d37jPW0=9C16B523"
-JIRA_URL = "https://photospherelabs.atlassian.net"
-JIRA_PROJECT = "PSAG"
+# Load from .jira_credentials file (excluded from git)
+credentials_file = Path(__file__).parent / ".jira_credentials"
+if credentials_file.exists():
+    # Read credentials from file
+    with open(credentials_file) as f:
+        for line in f:
+            if line.startswith("JIRA_EMAIL="):
+                JIRA_EMAIL = line.split("=", 1)[1].strip()
+            elif line.startswith("JIRA_TOKEN="):
+                JIRA_TOKEN = line.split("=", 1)[1].strip()
+            elif line.startswith("JIRA_URL="):
+                JIRA_URL = line.split("=", 1)[1].strip()
+            elif line.startswith("JIRA_PROJECT="):
+                JIRA_PROJECT = line.split("=", 1)[1].strip()
+else:
+    # Fallback to environment variables
+    JIRA_EMAIL = os.getenv("JIRA_EMAIL", "")
+    JIRA_TOKEN = os.getenv("JIRA_TOKEN", "")
+    JIRA_URL = os.getenv("JIRA_URL", "https://photospherelabs.atlassian.net")
+    JIRA_PROJECT = os.getenv("JIRA_PROJECT", "PSAG")
+
+if not JIRA_EMAIL or not JIRA_TOKEN:
+    print("❌ Error: JIRA_EMAIL and JIRA_TOKEN must be set")
+    print("   Create .jira_credentials file or set environment variables")
+    exit(1)
+
 ASSIGNEE_ACCOUNT_ID = "712020:0e79e054-9f07-4f7c-91f3-73834452b521"
 ISSUE_TYPE_TASK = "10008"
 
