@@ -15,10 +15,30 @@ This repository implements a multi-agent system that orchestrates specialized ag
 
 ## Project Management
 
-**TODO Tracking**: This project maintains an active TODO list in [TODO.md](TODO.md). When working on this codebase:
-- Always check TODO.md for current tasks and implementation status
-- Update TODO.md when completing tasks or planning new features
-- Add new tasks to the appropriate section (Pending/In Progress/Future Tasks)
+**⚠️ CRITICAL**: This project works VERY closely with Jira for all task management.
+
+### Jira Integration (PRIMARY)
+
+**Jira Project**: PSAGENT (Key: PSAG)
+**Board**: https://photospherelabs.atlassian.net/jira/software/projects/PSAG/board
+**All Tasks**: https://photospherelabs.atlassian.net/browse/PSAG
+
+**When working on this codebase, you MUST**:
+
+1. **Before Starting Work**: Check Jira board for current tasks and priorities
+2. **During Development**: Reference Jira task IDs in commits and comments
+3. **When Finding Issues**: Create new Jira tasks immediately (don't just note in code)
+4. **When Seeing Improvements**: Add tasks to Jira backlog with appropriate priority (P0/P1/P2/P3)
+5. **After Completing Work**: Update Jira task status to Done
+
+**Detailed Jira Workflow**: See [docs/project_management/JIRA_INTEGRATION.md](docs/project_management/JIRA_INTEGRATION.md)
+
+### TODO.md (Secondary)
+
+**TODO Tracking**: This project maintains [TODO.md](TODO.md) for high-level implementation notes:
+- Check TODO.md for current work-in-progress implementation details
+- Update TODO.md when working on complex multi-step features
+- Use TODO.md for technical notes, but use Jira for task tracking
 
 ## Commands
 

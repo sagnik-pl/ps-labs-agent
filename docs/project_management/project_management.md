@@ -45,19 +45,12 @@ All project tasks have been migrated to **Jira** for professional project manage
 
 ---
 
-## Current Sprint (Post-Demo)
+## Current Sprint
 
-### 🔥 P0 - CRITICAL (Sprint 0)
+**View current sprint tasks in Jira**: https://photospherelabs.atlassian.net/jira/software/projects/PSAG/board
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| **PSAG-8** | [SEC-001] Rotate all exposed API keys and AWS credentials | 2h |
-| **PSAG-9** | [SEC-002] Implement JWT authentication on WebSocket endpoints | 8h |
-| **PSAG-10** | [SEC-003] Add authentication to REST API endpoints | 4h |
-| **PSAG-11** | [SEC-013] Secure Railway production deployment | 6h |
-
+**Priority Focus**: P0 Critical tasks (Security hardening)
 **Sprint Goal**: Secure all API endpoints and rotate compromised credentials
-**Total Effort**: 20 hours
 
 ---
 

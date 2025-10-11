@@ -280,40 +280,29 @@
 
 ### ✅ Security (CRITICAL - Must Complete First)
 
-Reference: [vulns_and_issues.md](vulns_and_issues.md)
+**All security tasks tracked in Jira**: https://photospherelabs.atlassian.net/browse/PSAG
 
-- [ ] **SEC-001**: Rotate all exposed API keys and AWS credentials
-  - [ ] Generate new OpenAI API key
-  - [ ] Create new AWS IAM user with restricted permissions
-  - [ ] Update all services with new credentials
-  - [ ] Verify old credentials are revoked
+**Priority P0 Tasks** (see Jira for full details):
+- PSAG-8: [SEC-001] Rotate all exposed API keys and AWS credentials
+- PSAG-9: [SEC-002] Implement JWT authentication on WebSocket
+- PSAG-10: [SEC-003] Add authentication to REST endpoints
+- PSAG-11: [SEC-013] Secure Railway production deployment
 
-- [ ] **SEC-002**: Implement JWT authentication on WebSocket
-  - [ ] Set up JWT token generation
-  - [ ] Add token validation middleware
-  - [ ] Test authentication flow
+**Priority P1 Tasks**:
+- PSAG-12: [SEC-004] Fix CORS configuration
+- PSAG-16: [SEC-008] Remove hardcoded AWS credentials
 
-- [ ] **SEC-003**: Add authentication to REST endpoints
-  - [ ] Implement FastAPI Depends() for auth
-  - [ ] Verify user_id matches authenticated user
-
-- [ ] **SEC-004**: Fix CORS configuration
-  - [ ] Replace `allow_origins=["*"]` with specific domain
-  - [ ] Set `allow_origins=["https://www.photospherelabs.com"]`
-
-- [ ] **SEC-008**: Remove hardcoded AWS credentials
-  - [ ] Use IAM roles (Railway supports AWS assume role)
-  - [ ] Or use environment variables securely
+**View all security tasks**: `project = PSAG AND labels = security`
 
 ### ✅ Code Quality
 
-- [ ] **QUAL-002**: Remove all print statements
-  - [ ] Replace with logger.info/warning/error
-  - [ ] Verify no print() in production code
+**Code quality tasks tracked in Jira**: https://photospherelabs.atlassian.net/browse/PSAG
 
-- [ ] **QUAL-001**: Fix error handling
-  - [ ] Replace bare except blocks with specific exceptions
-  - [ ] Add proper error logging
+**Key Tasks**:
+- PSAG-20: [QUAL-002] Replace print statements with proper logging
+- PSAG-19: [QUAL-001] Refactor error handling
+
+**View all quality tasks**: `project = PSAG AND labels = quality`
 
 ### ✅ Configuration
 
@@ -1568,7 +1557,7 @@ aws application-autoscaling put-scaling-policy \
 
 ### Immediate (This Week)
 
-1. ✅ Complete security fixes (SEC-001 to SEC-004)
+1. ⬜ Complete P0 security fixes (PSAG-8 to PSAG-11) - See Jira
 2. ✅ Set up Railway account
 3. ✅ Create Dockerfile
 4. ✅ Deploy to staging
