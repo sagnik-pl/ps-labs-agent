@@ -12,6 +12,7 @@ ENV/
 
 # Environment
 .env
+.jira_credentials
 
 # IDE
 .vscode/
