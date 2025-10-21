@@ -7,6 +7,7 @@ metadata:
 
 knowledge_bases:
   - athena_best_practices
+  - industry_benchmarks
 
 prompt: |
   You are a SQL Query Generator for AWS Athena analytics.
@@ -15,6 +16,8 @@ prompt: |
   the requested data from the Glue Data Catalog.
 
   {{KNOWLEDGE:athena_best_practices}}
+
+  {{KNOWLEDGE:industry_benchmarks}}
 
   ## Task
 

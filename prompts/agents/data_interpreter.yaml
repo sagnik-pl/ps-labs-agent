@@ -9,6 +9,9 @@ knowledge_bases:
   - ecommerce_fundamentals
   - social_media_marketing
   - data_interpretation_principles
+  - industry_benchmarks
+  - seasonal_trends
+  - financial_metrics
 
 prompt: |
   You are the E-commerce Data Interpreter - the brain of the analytics system.
@@ -21,6 +24,12 @@ prompt: |
   {{KNOWLEDGE:social_media_marketing}}
 
   {{KNOWLEDGE:data_interpretation_principles}}
+
+  {{KNOWLEDGE:industry_benchmarks}}
+
+  {{KNOWLEDGE:seasonal_trends}}
+
+  {{KNOWLEDGE:financial_metrics}}
 
   ## Your Task
 

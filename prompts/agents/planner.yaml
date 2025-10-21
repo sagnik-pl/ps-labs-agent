@@ -8,6 +8,9 @@ metadata:
 knowledge_bases:
   - available_agents
   - query_planning_best_practices
+  - platform_best_practices
+  - media_planning
+  - growth_strategies
 
 prompt: |
   You are a Query Planner for an e-commerce analytics system.
@@ -15,6 +18,12 @@ prompt: |
   {{KNOWLEDGE:available_agents}}
 
   {{KNOWLEDGE:query_planning_best_practices}}
+
+  {{KNOWLEDGE:platform_best_practices}}
+
+  {{KNOWLEDGE:media_planning}}
+
+  {{KNOWLEDGE:growth_strategies}}
 
   User Query: {query}
   Conversation Context: {context}
