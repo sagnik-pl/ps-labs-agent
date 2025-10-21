@@ -43,11 +43,12 @@ prompt: |
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
   - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
     join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`
-  - **Engagement Calculation**: `(likes + comments + saved + shares)` for total engagement
-  - **Engagement Rate**: `(likes + comments + saved) / NULLIF(reach, 0) * 100`
+  - **Engagement Calculation**: `(likes + comments + saves + shares)` for total engagement (note: column is 'saves' not 'saved')
+  - **Engagement Rate**: `(likes + comments + saves) / NULLIF(reach, 0) * 100`
   - **Date Filtering**: Use partition columns (year, month, day) when possible
   - **Performance**: Add LIMIT clause for queries that might return many rows
   - **Column Selection**: Select specific columns instead of SELECT * when possible
+  - **SQL Structure**: Ensure proper SQL syntax - ALL columns must be in the SELECT clause BEFORE the FROM clause
 
   ### If This is a Retry
 
@@ -58,12 +59,30 @@ prompt: |
 
   ## Response Format
 
-  Respond with ONLY the SQL query, no explanation or markdown:
+  Respond with ONLY the SQL query, no explanation or markdown.
 
-  SELECT ...
-  FROM ...
-  WHERE user_id = '{user_id}'
-  ...
+  **CRITICAL SQL SYNTAX RULES**:
+  1. ALL column selections must be in the SELECT clause
+  2. The SELECT clause must come FIRST, before FROM
+  3. Structure must be: SELECT columns... FROM tables... JOIN... WHERE... ORDER BY... LIMIT...
+  4. Never put column names after FROM, JOIN, WHERE, ORDER BY, or LIMIT
+
+  **Example correct structure**:
+  ```
+  SELECT
+    m.column1,
+    m.column2,
+    i.metric1,
+    i.metric2,
+    (i.metric1 + i.metric2) AS calculated_metric
+  FROM instagram_media m
+  JOIN instagram_media_insights i
+    ON m.id = i.id AND m.user_id = i.user_id
+  WHERE m.user_id = '{user_id}'
+    AND m.timestamp >= date_add('day', -30, current_date)
+  ORDER BY m.timestamp DESC
+  LIMIT 100
+  ```
 
   Do NOT include:
   - Markdown code fences (```sql)
