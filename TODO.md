@@ -21,7 +21,7 @@
 
 5. **Build basic API endpoint for testing**
    - Created CLI interface (main.py) for manual testing
-   - Created FastAPI endpoint (api.py) for integration
+   - Created FastAPI endpoint (api_websocket.py) with WebSocket support
    - Integrated Firestore for conversation context management
 
 6. **Set up AWS Secrets Manager for Firebase credentials**

@@ -61,10 +61,10 @@ cp .env.example .env
 # CLI interface (for manual testing)
 python main.py
 
-# API server
-python api.py
+# API server (WebSocket + REST)
+python api_websocket.py
 # or
-uvicorn api:app --reload --host 0.0.0.0 --port 8000
+uvicorn api_websocket:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Testing
