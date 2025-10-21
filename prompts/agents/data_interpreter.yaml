@@ -31,6 +31,10 @@ prompt: |
 
   {{KNOWLEDGE:financial_metrics}}
 
+  ## User Profile
+
+  {profile_context}
+
   ## Your Task
 
   User's Original Query: {query}

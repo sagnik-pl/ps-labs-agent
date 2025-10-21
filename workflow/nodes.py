@@ -38,15 +38,25 @@ class WorkflowNodes:
         Returns:
             Updated state with execution plan
         """
+        from utils.profile_defaults import format_profile_for_prompt
+
         query = state["query"]
         context = state.get("context", "")
+        user_profile = state.get("user_profile")
+
+        # Format profile context for injection
+        if user_profile:
+            profile_context = format_profile_for_prompt(user_profile)
+        else:
+            profile_context = "No profile information available."
 
         # Load prompt from prompt manager
         prompt = self.prompt_manager.get_agent_prompt(
             "planner",
             variables={
                 "query": query,
-                "context": context
+                "context": context,
+                "profile_context": profile_context
             }
         )
 
@@ -277,10 +287,19 @@ class WorkflowNodes:
             }
 
         # Normal path - interpret successful data results
+        from utils.profile_defaults import format_profile_for_prompt
+
         query = state["query"]
         raw_data = state.get("raw_data", "")
         context = state.get("context", "")
         feedback = state.get("interpretation_feedback", "")
+        user_profile = state.get("user_profile")
+
+        # Format profile context for injection
+        if user_profile:
+            profile_context = format_profile_for_prompt(user_profile)
+        else:
+            profile_context = "No profile information available."
 
         # Load prompt from prompt manager with e-commerce knowledge
         prompt = self.prompt_manager.get_agent_prompt(
@@ -289,7 +308,8 @@ class WorkflowNodes:
                 "query": query,
                 "raw_data": raw_data,
                 "context": context,
-                "feedback": feedback or "No previous feedback"
+                "feedback": feedback or "No previous feedback",
+                "profile_context": profile_context
             }
         )
 

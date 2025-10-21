@@ -17,6 +17,7 @@ class AgentState(TypedDict):
     # User & Session Info
     user_id: str
     conversation_id: str
+    user_profile: Optional[Dict[str, Any]]  # User business profile for personalization
 
     # Messages & Query
     messages: Annotated[List[BaseMessage], operator.add]  # Conversation history

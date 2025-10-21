@@ -6,7 +6,8 @@ streaming progress updates and results in real-time.
 """
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Set
+from pydantic import BaseModel
+from typing import Dict, Set, Optional, Any
 import json
 import uuid
 from datetime import datetime, timezone
@@ -43,6 +44,23 @@ app.add_middleware(
 # Active WebSocket connections
 active_connections: Dict[str, WebSocket] = {}
 
+
+# ========== Pydantic Models for Profile API ==========
+
+class ProfileUpdate(BaseModel):
+    """Model for profile update requests."""
+    business_profile: Optional[Dict[str, Any]] = None
+    goals: Optional[Dict[str, Any]] = None
+    preferences: Optional[Dict[str, Any]] = None
+    learned_context: Optional[Dict[str, Any]] = None
+
+
+class SectionUpdate(BaseModel):
+    """Model for section-specific update requests."""
+    data: Dict[str, Any]
+
+
+# ========== Connection Manager ==========
 
 class ConnectionManager:
     """Manage WebSocket connections."""
@@ -196,6 +214,13 @@ async def process_query_with_progress(
         except Exception:
             context = ""
 
+        # Get user profile from Firestore
+        try:
+            user_profile = firebase_client.get_user_profile(user_id)
+        except Exception as e:
+            logger.warning(f"Could not load user profile: {e}")
+            user_profile = None
+
         # Save user message to Firestore (with title if new conversation)
         try:
             firebase_client.save_message(
@@ -212,6 +237,7 @@ async def process_query_with_progress(
         initial_state = {
             "user_id": user_id,
             "conversation_id": conversation_id,
+            "user_profile": user_profile,
             "query": query,
             "context": context,
             "messages": [HumanMessage(content=query)],
@@ -392,6 +418,134 @@ async def get_messages(user_id: str, conversation_id: str, limit: int = 50):
         }
     except Exception as e:
         logger.error(f"Error fetching messages for conversation {conversation_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== User Profile Endpoints ==========
+
+@app.get("/users/{user_id}/profile")
+async def get_user_profile(user_id: str):
+    """
+    Get complete user profile.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        Complete profile dictionary with all 4 sections
+        (business_profile, goals, preferences, learned_context)
+    """
+    try:
+        profile = firebase_client.get_user_profile(user_id)
+        return {
+            "user_id": user_id,
+            "profile": profile
+        }
+    except Exception as e:
+        logger.error(f"Error fetching profile for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/users/{user_id}/profile")
+async def create_or_update_profile(user_id: str, profile_data: ProfileUpdate):
+    """
+    Create or update user profile (typically used during onboarding).
+
+    Args:
+        user_id: User ID
+        profile_data: Profile data (one or more sections to update)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException 400: If validation fails
+        HTTPException 500: If save fails
+    """
+    try:
+        # Convert Pydantic model to dict, excluding None values
+        data_dict = profile_data.model_dump(exclude_none=True)
+
+        if not data_dict:
+            raise HTTPException(
+                status_code=400,
+                detail="No profile data provided. Include at least one section."
+            )
+
+        firebase_client.save_user_profile(user_id, data_dict)
+
+        return {
+            "user_id": user_id,
+            "message": "Profile saved successfully",
+            "updated_sections": list(data_dict.keys())
+        }
+    except ValueError as e:
+        # Validation error from profile_defaults validators
+        logger.error(f"Validation error for user {user_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error saving profile for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/users/{user_id}/profile/{section}")
+async def update_profile_section(
+    user_id: str,
+    section: str,
+    section_data: SectionUpdate
+):
+    """
+    Update a specific section of user profile (partial update).
+
+    Args:
+        user_id: User ID
+        section: Section name ('business_profile', 'goals', 'preferences', 'learned_context')
+        section_data: Data to update in the section
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException 400: If section name is invalid or validation fails
+        HTTPException 500: If update fails
+    """
+    try:
+        firebase_client.update_profile_section(user_id, section, section_data.data)
+
+        return {
+            "user_id": user_id,
+            "section": section,
+            "message": f"Section '{section}' updated successfully"
+        }
+    except ValueError as e:
+        # Invalid section name or validation error
+        logger.error(f"Validation error for user {user_id}, section {section}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating section {section} for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/users/{user_id}/profile/summary")
+async def get_profile_summary(user_id: str):
+    """
+    Get formatted profile context summary for display or agent use.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        Formatted string like: "User Profile: Business: BrandName | Category: Fashion | ..."
+    """
+    try:
+        summary = firebase_client.get_profile_context_summary(user_id)
+
+        return {
+            "user_id": user_id,
+            "summary": summary
+        }
+    except Exception as e:
+        logger.error(f"Error fetching profile summary for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

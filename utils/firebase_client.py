@@ -9,6 +9,13 @@ from config.settings import settings
 import boto3
 import json
 import logging
+from utils.profile_defaults import (
+    get_default_profile,
+    validate_business_profile,
+    validate_goals,
+    validate_preferences,
+    format_profile_for_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +318,254 @@ class FirebaseClient:
             return content
 
         return "Empty conversation"
+
+    # ========== User Profile Methods ==========
+
+    def get_profile_ref(self, user_id: str):
+        """Get Firestore reference to user's profile collection."""
+        return self.db.collection("conversations").document(user_id).collection("profile")
+
+    def get_user_profile(self, user_id: str) -> Dict[str, Any]:
+        """
+        Fetch complete user profile from Firestore or return defaults.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Complete profile dictionary with all 4 sections (business_profile, goals, preferences, learned_context)
+        """
+        try:
+            profile_ref = self.get_profile_ref(user_id)
+            profile_data = {}
+
+            # Fetch all 4 profile sections
+            sections = ["business_profile", "goals", "preferences", "learned_context"]
+            for section in sections:
+                doc = profile_ref.document(section).get()
+                if doc.exists:
+                    profile_data[section] = doc.to_dict()
+                else:
+                    # Section doesn't exist, use defaults
+                    profile_data[section] = None
+
+            # If no profile exists at all, return complete defaults
+            if all(v is None for v in profile_data.values()):
+                logger.info(f"No profile found for user {user_id[:8]}..., returning defaults")
+                return get_default_profile()
+
+            # Merge with defaults for any missing sections
+            default_profile = get_default_profile()
+            for section in sections:
+                if profile_data[section] is None:
+                    profile_data[section] = default_profile[section]
+
+            logger.info(f"✅ Fetched profile for user {user_id[:8]}...")
+            return profile_data
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching profile for user {user_id}: {str(e)}")
+            # Return defaults on error
+            return get_default_profile()
+
+    def save_user_profile(self, user_id: str, profile_data: Dict[str, Any]):
+        """
+        Create or update complete user profile with validation.
+
+        Args:
+            user_id: User ID
+            profile_data: Profile data dictionary containing one or more sections
+                         (business_profile, goals, preferences, learned_context)
+
+        Raises:
+            ValueError: If validation fails
+        """
+        try:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            profile_ref = self.get_profile_ref(user_id)
+
+            # Validate and save each section
+            if "business_profile" in profile_data:
+                validated = validate_business_profile(profile_data["business_profile"])
+                profile_ref.document("business_profile").set(validated)
+                logger.info(f"✅ Saved business_profile for user {user_id[:8]}...")
+
+            if "goals" in profile_data:
+                validated = validate_goals(profile_data["goals"])
+                profile_ref.document("goals").set(validated)
+                logger.info(f"✅ Saved goals for user {user_id[:8]}...")
+
+            if "preferences" in profile_data:
+                validated = validate_preferences(profile_data["preferences"])
+                profile_ref.document("preferences").set(validated)
+                logger.info(f"✅ Saved preferences for user {user_id[:8]}...")
+
+            if "learned_context" in profile_data:
+                # Learned context doesn't need validation
+                learned = profile_data["learned_context"]
+                learned["updated_at"] = now
+                if "created_at" not in learned or learned["created_at"] is None:
+                    learned["created_at"] = now
+                profile_ref.document("learned_context").set(learned)
+                logger.info(f"✅ Saved learned_context for user {user_id[:8]}...")
+
+            # Update user document's last_updated timestamp
+            user_doc_ref = self.get_user_doc_ref(user_id)
+            user_doc_ref.update({"last_updated": now})
+
+        except ValueError as e:
+            logger.error(f"❌ Validation error saving profile for user {user_id}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error saving profile for user {user_id}: {str(e)}")
+            raise
+
+    def update_profile_section(self, user_id: str, section: str, data: Dict[str, Any]):
+        """
+        Update a specific section of user profile (partial update).
+
+        Args:
+            user_id: User ID
+            section: Section name ('business_profile', 'goals', 'preferences', 'learned_context')
+            data: Data to update in the section
+
+        Raises:
+            ValueError: If section name is invalid or validation fails
+        """
+        valid_sections = ["business_profile", "goals", "preferences", "learned_context"]
+        if section not in valid_sections:
+            raise ValueError(f"Invalid section: {section}. Must be one of {valid_sections}")
+
+        try:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            profile_ref = self.get_profile_ref(user_id)
+
+            # Fetch existing data for this section
+            doc = profile_ref.document(section).get()
+            if doc.exists:
+                existing_data = doc.to_dict()
+            else:
+                # No existing data, start with defaults
+                default_profile = get_default_profile()
+                existing_data = default_profile[section]
+
+            # Merge with new data
+            merged_data = {**existing_data, **data}
+            merged_data["updated_at"] = now
+
+            # Validate based on section type
+            if section == "business_profile":
+                validated = validate_business_profile(merged_data)
+            elif section == "goals":
+                validated = validate_goals(merged_data)
+            elif section == "preferences":
+                validated = validate_preferences(merged_data)
+            else:  # learned_context
+                validated = merged_data
+
+            # Save to Firestore
+            profile_ref.document(section).set(validated)
+            logger.info(f"✅ Updated {section} for user {user_id[:8]}...")
+
+            # Update user document's last_updated timestamp
+            user_doc_ref = self.get_user_doc_ref(user_id)
+            user_doc_ref.update({"last_updated": now})
+
+        except ValueError as e:
+            logger.error(f"❌ Validation error updating {section} for user {user_id}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error updating {section} for user {user_id}: {str(e)}")
+            raise
+
+    def get_profile_context_summary(self, user_id: str) -> str:
+        """
+        Get formatted profile context string for agent prompt injection.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Formatted string like: "User Profile: Business: BrandName | Category: Fashion | ..."
+        """
+        try:
+            profile = self.get_user_profile(user_id)
+            return format_profile_for_prompt(profile)
+        except Exception as e:
+            logger.error(f"❌ Error formatting profile context for user {user_id}: {str(e)}")
+            return "No profile information available."
+
+    def update_learned_context(self, user_id: str, insights: Dict[str, Any]):
+        """
+        Append learned insights to user's learned_context (incremental learning).
+
+        Args:
+            user_id: User ID
+            insights: Dictionary with keys like 'common_questions', 'pain_points',
+                     'successful_actions', 'channel_focus'
+
+        Example:
+            update_learned_context(user_id, {
+                "common_questions": ["How do I improve engagement?"],
+                "pain_points": ["Low conversion rate"],
+                "channel_focus": {"instagram": 80}
+            })
+        """
+        try:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            profile_ref = self.get_profile_ref(user_id)
+
+            # Fetch existing learned_context
+            doc = profile_ref.document("learned_context").get()
+            if doc.exists:
+                learned = doc.to_dict()
+            else:
+                # Initialize with defaults
+                from utils.profile_defaults import DEFAULT_LEARNED_CONTEXT
+                learned = DEFAULT_LEARNED_CONTEXT.copy()
+                learned["created_at"] = now
+
+            # Append new insights (don't overwrite, accumulate)
+            if "common_questions" in insights:
+                existing_questions = learned.get("common_questions", [])
+                new_questions = insights["common_questions"]
+                # Append and deduplicate
+                learned["common_questions"] = list(set(existing_questions + new_questions))
+
+            if "pain_points" in insights:
+                existing_pain_points = learned.get("pain_points", [])
+                new_pain_points = insights["pain_points"]
+                learned["pain_points"] = list(set(existing_pain_points + new_pain_points))
+
+            if "successful_actions" in insights:
+                existing_actions = learned.get("successful_actions", [])
+                new_actions = insights["successful_actions"]
+                learned["successful_actions"] = list(set(existing_actions + new_actions))
+
+            if "channel_focus" in insights:
+                # Merge channel focus percentages (average if overlapping)
+                existing_focus = learned.get("channel_focus", {})
+                new_focus = insights["channel_focus"]
+                for channel, percentage in new_focus.items():
+                    if channel in existing_focus:
+                        # Average the percentages
+                        existing_focus[channel] = (existing_focus[channel] + percentage) / 2
+                    else:
+                        existing_focus[channel] = percentage
+                learned["channel_focus"] = existing_focus
+
+            learned["updated_at"] = now
+
+            # Save to Firestore
+            profile_ref.document("learned_context").set(learned)
+            logger.info(f"✅ Updated learned_context for user {user_id[:8]}...")
+
+        except Exception as e:
+            logger.error(f"❌ Error updating learned_context for user {user_id}: {str(e)}")
+            raise
 
 
 # Global instance

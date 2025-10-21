@@ -25,6 +25,12 @@ prompt: |
 
   {{KNOWLEDGE:growth_strategies}}
 
+  ## User Context
+
+  {profile_context}
+
+  ## Task
+
   User Query: {query}
   Conversation Context: {context}
 
