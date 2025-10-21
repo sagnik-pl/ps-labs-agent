@@ -19,7 +19,9 @@ logger.info(f"Initializing settings for environment: {env}")
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=False,
-        extra="ignore"
+        extra="ignore",
+        env_file=".env",
+        env_file_encoding="utf-8"
     )
     # LLM Provider
     openai_api_key: Optional[str] = None
