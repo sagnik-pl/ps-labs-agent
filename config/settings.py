@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # Application
     environment: str = "development"
     log_level: str = "INFO"
+    cors_origins: str = "http://localhost:3000"
 
     @property
     def athena_s3_output_location(self) -> str:

@@ -17,6 +17,7 @@ from workflow.progress import ProgressEvent, get_progress_message
 from langchain_core.messages import HumanMessage
 from utils.firebase_client import firebase_client
 from utils.title_generator import generate_conversation_title
+from config.settings import settings
 
 # Set up logging
 logging.basicConfig(
@@ -29,9 +30,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Photosphere Labs Agent API")
 
 # CORS middleware for frontend
+# Parse CORS origins from environment variable (comma-separated string)
+cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update with your frontend URL in production
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
