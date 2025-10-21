@@ -604,6 +604,11 @@ class WorkflowNodes:
                     "user_id": user_id
                 })
 
+                # Check if result is an error string (athena_tools returns errors as strings)
+                if result.startswith("Error executing query:") or result.startswith("Error getting schema:"):
+                    # Treat error strings as exceptions
+                    raise Exception(result.replace("Error executing query:", "").replace("Error getting schema:", "").strip())
+
                 logger.info(f"SQL query executed successfully for user {user_id[:8]}... (attempts: {retry_count + 1})")
                 return {
                     "agent_results": {
@@ -650,7 +655,7 @@ class WorkflowNodes:
                     if "NoSuchKey" in error_details or "does not exist" in error_details.lower():
                         error_category = "data_not_found"
                         user_message = "No data found. This could mean you haven't connected your data sources yet or there's no data for the requested time period."
-                    elif "SYNTAX_ERROR" in error_details or "syntax" in error_details.lower():
+                    elif "SYNTAX_ERROR" in error_details or "syntax" in error_details.lower() or "mismatched input" in error_details.lower() or "InvalidRequestException" in error_details:
                         error_category = "sql_syntax"
                         user_message = "There was an issue generating the query. Please try rephrasing your question."
                     elif "timeout" in error_details.lower() or "timed out" in error_details.lower():
