@@ -246,6 +246,39 @@ class WorkflowNodes:
         Returns:
             Updated state with data interpretation
         """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Check if there was an error in execution
+        execution_status = state.get("execution_status", "success")
+        error_message = state.get("error_message", "")
+
+        if execution_status == "error":
+            # Don't try to interpret error messages - return user-friendly error instead
+            logger.warning("Skipping data interpretation due to execution error")
+
+            error_response = f"⚠️ **Unable to retrieve data**\n\n{error_message}"
+
+            # If there's more context from agent_results, add it
+            agent_results = state.get("agent_results", {})
+            error_category = agent_results.get("error_category", "unknown")
+
+            # Add helpful suggestions based on error category
+            if error_category == "data_not_found":
+                error_response += "\n\n**What you can do:**\n- Check if your data sources are connected\n- Try a different time range\n- Verify your account has data available"
+            elif error_category == "sql_syntax":
+                error_response += "\n\n**What you can try:**\n- Rephrase your question more simply\n- Be more specific about what data you want\n- Ask about a specific metric or time period"
+            elif error_category == "timeout":
+                error_response += "\n\n**What you can try:**\n- Ask about a shorter time period\n- Be more specific in your question\n- Focus on a specific aspect of your data"
+
+            return {
+                "data_interpretation": error_response,
+                "messages": [AIMessage(content=error_response)],
+                "interpretation_is_error": True,  # Mark this as an error response
+            }
+
+        # Normal path - interpret successful data results
         query = state["query"]
         raw_data = state.get("raw_data", "")
         context = state.get("context", "")
@@ -270,6 +303,7 @@ class WorkflowNodes:
         return {
             "data_interpretation": interpretation,
             "messages": [AIMessage(content=interpretation)],
+            "interpretation_is_error": False,  # Mark this as a successful interpretation
         }
 
     def interpretation_validator_node(self, state: AgentState) -> Dict[str, Any]:
@@ -288,6 +322,21 @@ class WorkflowNodes:
         Returns:
             Updated state with validation results and retry decision
         """
+        # Skip validation if this was an error response
+        interpretation_is_error = state.get("interpretation_is_error", False)
+
+        if interpretation_is_error:
+            # Don't validate error messages - just pass through to final interpreter
+            return {
+                "interpretation_validation": {
+                    "is_valid": True,
+                    "quality_score": 100,
+                    "feedback": "Error message - no validation needed",
+                    "reasoning": "Skipped validation for error response"
+                },
+                "next_step": "final_interpreter",
+            }
+
         query = state["query"]
         raw_data = state.get("raw_data", "")
         interpretation = state.get("data_interpretation", "")
@@ -505,9 +554,10 @@ class WorkflowNodes:
 
     def sql_executor_node(self, state: AgentState) -> Dict[str, Any]:
         """
-        Execute validated SQL query.
+        Execute validated SQL query with retry logic.
 
         Runs the validated SQL query against Athena and returns results.
+        Implements retry logic with exponential backoff for transient failures.
 
         Args:
             state: Current agent state
@@ -516,37 +566,121 @@ class WorkflowNodes:
             Updated state with query results
         """
         from tools.athena_tools import athena_query_tool
+        import logging
+        import traceback
+        import time
 
+        logger = logging.getLogger(__name__)
         user_id = state["user_id"]
         generated_sql = state.get("generated_sql", "")
 
-        # Execute the validated SQL query
-        try:
-            result = athena_query_tool.invoke({
-                "query": generated_sql,
-                "user_id": user_id
-            })
+        # Retry configuration
+        max_retries = 3
+        retry_count = 0
+        base_delay = 1  # seconds
 
-            return {
-                "agent_results": {
-                    "agent": "sql_executor",
-                    "result": result,
-                    "sql_query": generated_sql,
-                    "status": "completed",
-                },
-                "raw_data": result,
-                "messages": [AIMessage(content=result)],
-            }
+        def is_retryable_error(error_details: str, error_type: str) -> bool:
+            """Determine if an error is transient and worth retrying."""
+            retryable_patterns = [
+                "timeout",
+                "timed out",
+                "connection",
+                "network",
+                "throttl",
+                "rate limit",
+                "temporarily unavailable",
+                "serviceexception"
+            ]
+            return any(pattern in error_details.lower() for pattern in retryable_patterns)
 
-        except Exception as e:
-            error_msg = f"Error executing SQL query: {str(e)}\n\nQuery:\n{generated_sql}"
-            return {
-                "agent_results": {
-                    "agent": "sql_executor",
-                    "result": error_msg,
-                    "sql_query": generated_sql,
-                    "status": "error",
-                },
-                "raw_data": error_msg,
-                "messages": [AIMessage(content=error_msg)],
-            }
+        while retry_count <= max_retries:
+            try:
+                if retry_count > 0:
+                    logger.info(f"Retry attempt {retry_count}/{max_retries} for user {user_id[:8]}...")
+
+                logger.info(f"Executing SQL query for user {user_id[:8]}...")
+                result = athena_query_tool.invoke({
+                    "query": generated_sql,
+                    "user_id": user_id
+                })
+
+                logger.info(f"SQL query executed successfully for user {user_id[:8]}... (attempts: {retry_count + 1})")
+                return {
+                    "agent_results": {
+                        "agent": "sql_executor",
+                        "result": result,
+                        "sql_query": generated_sql,
+                        "status": "completed",
+                        "retry_count": retry_count,
+                    },
+                    "raw_data": result,
+                    "execution_status": "success",  # Explicit success marker
+                    "messages": [AIMessage(content=result)],
+                }
+
+            except Exception as e:
+                # Log detailed error information
+                error_type = type(e).__name__
+                error_details = str(e)
+                stack_trace = traceback.format_exc()
+
+                logger.error(f"SQL Execution Error for user {user_id[:8]}... (attempt {retry_count + 1}/{max_retries + 1})")
+                logger.error(f"Error Type: {error_type}")
+                logger.error(f"Error Message: {error_details}")
+
+                # Check if error is retryable
+                is_retryable = is_retryable_error(error_details, error_type)
+
+                if is_retryable and retry_count < max_retries:
+                    # Exponential backoff: 1s, 2s, 4s
+                    delay = base_delay * (2 ** retry_count)
+                    logger.info(f"Retryable error detected. Retrying in {delay}s...")
+                    time.sleep(delay)
+                    retry_count += 1
+                    continue  # Retry
+                else:
+                    # Non-retryable error or max retries exceeded
+                    if retry_count >= max_retries:
+                        logger.error(f"Max retries ({max_retries}) exceeded for user {user_id[:8]}...")
+
+                    logger.error(f"SQL Query:\n{generated_sql}")
+                    logger.error(f"Stack Trace:\n{stack_trace}")
+
+                    # Categorize error type for better user messages
+                    if "NoSuchKey" in error_details or "does not exist" in error_details.lower():
+                        error_category = "data_not_found"
+                        user_message = "No data found. This could mean you haven't connected your data sources yet or there's no data for the requested time period."
+                    elif "SYNTAX_ERROR" in error_details or "syntax" in error_details.lower():
+                        error_category = "sql_syntax"
+                        user_message = "There was an issue generating the query. Please try rephrasing your question."
+                    elif "timeout" in error_details.lower() or "timed out" in error_details.lower():
+                        error_category = "timeout"
+                        user_message = "The query took too long to execute. Try narrowing down your time range or being more specific."
+                    elif "permission" in error_details.lower() or "access denied" in error_details.lower():
+                        error_category = "permission"
+                        user_message = "Unable to access the data. Please check your data source permissions."
+                    elif is_retryable:
+                        error_category = "transient"
+                        user_message = "We're experiencing temporary connectivity issues. Please try again in a moment."
+                    else:
+                        error_category = "unknown"
+                        user_message = "An error occurred while retrieving your data. Our team has been notified."
+
+                    error_msg = f"Error executing SQL query: {error_details}\n\nQuery:\n{generated_sql}"
+
+                    return {
+                        "agent_results": {
+                            "agent": "sql_executor",
+                            "result": error_msg,
+                            "sql_query": generated_sql,
+                            "status": "error",
+                            "error_type": error_type,
+                            "error_category": error_category,
+                            "error_details": error_details,
+                            "retry_count": retry_count,
+                        },
+                        "raw_data": error_msg,
+                        "execution_status": "error",  # Explicit error marker
+                        "error_message": user_message,  # User-friendly message
+                        "messages": [AIMessage(content=error_msg)],
+                    }

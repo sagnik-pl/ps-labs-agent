@@ -1,20 +1,19 @@
 """
 Application settings loaded from environment variables.
 """
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 import os
+import logging
 
-# DEBUG: Print all environment variables to see what Railway is providing
-print("=" * 80)
-print("ENVIRONMENT VARIABLES AVAILABLE:")
-for key, value in os.environ.items():
-    if any(x in key.upper() for x in ['AWS', 'ATHENA', 'GLUE', 'FIREBASE', 'OPENAI', 'ANTHROPIC', 'ENVIRONMENT']):
-        print(f"{key} = {value[:20]}..." if len(value) > 20 else f"{key} = {value}")
-print("=" * 80)
-print(f"DETECTED ENVIRONMENT: {os.getenv('ENVIRONMENT', 'development')}")
-print("=" * 80)
+# Set up logging for configuration
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+# Log environment configuration (for debugging)
+env = os.getenv('ENVIRONMENT', 'development')
+logger.info(f"Initializing settings for environment: {env}")
 
 
 class Settings(BaseSettings):
@@ -68,5 +67,76 @@ class Settings(BaseSettings):
             return self.firebase_secret_name_prod
         return self.firebase_secret_name_dev
 
+    def validate_configuration(self) -> dict:
+        """
+        Validate that all required configuration is present and valid.
+
+        Returns:
+            Dict with validation results
+        """
+        validation_results = {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+        }
+
+        # Check AWS credentials
+        if not self.aws_access_key_id or not self.aws_secret_access_key:
+            validation_results["valid"] = False
+            validation_results["errors"].append(
+                "AWS credentials not set (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)"
+            )
+
+        if not self.aws_region:
+            validation_results["valid"] = False
+            validation_results["errors"].append("AWS region not set (AWS_REGION)")
+
+        # Check LLM API keys
+        if not self.openai_api_key and not self.anthropic_api_key:
+            validation_results["warnings"].append(
+                "No LLM API keys set (OPENAI_API_KEY or ANTHROPIC_API_KEY)"
+            )
+
+        # Check Athena/Glue configuration
+        if not self.glue_database:
+            validation_results["valid"] = False
+            validation_results["errors"].append(
+                f"Glue database not configured for environment '{self.environment}'"
+            )
+
+        if not self.athena_s3_output_location:
+            validation_results["valid"] = False
+            validation_results["errors"].append(
+                f"Athena S3 output location not configured for environment '{self.environment}'"
+            )
+
+        # Check Firebase configuration
+        if not self.firebase_secret_name:
+            validation_results["valid"] = False
+            validation_results["errors"].append(
+                f"Firebase secret name not configured for environment '{self.environment}'"
+            )
+
+        # Log results
+        if validation_results["valid"]:
+            logger.info("✓ Configuration validation passed")
+            if validation_results["warnings"]:
+                for warning in validation_results["warnings"]:
+                    logger.warning(f"⚠ {warning}")
+        else:
+            logger.error("✗ Configuration validation failed:")
+            for error in validation_results["errors"]:
+                logger.error(f"  - {error}")
+
+        return validation_results
+
 
 settings = Settings()
+
+# Validate configuration on startup (but don't fail - just log)
+config_validation = settings.validate_configuration()
+if not config_validation["valid"]:
+    logger.warning(
+        "Configuration has errors. Application may not function correctly. "
+        "Please check environment variables."
+    )
