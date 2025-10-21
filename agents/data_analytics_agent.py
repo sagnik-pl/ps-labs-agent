@@ -32,7 +32,7 @@ class DataAnalyticsAgent:
             )
         else:
             self.llm = ChatOpenAI(
-                model="gpt-4-turbo-preview",
+                model="gpt-4o",  # Upgraded from gpt-4-turbo-preview for 2x speed improvement
                 openai_api_key=settings.openai_api_key,
                 temperature=0,
             )

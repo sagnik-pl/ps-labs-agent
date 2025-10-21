@@ -17,9 +17,9 @@ def create_agent_workflow(checkpointer=None):
                                      ↑              ↓                              ↓
                                      └─ retry_sql ──┘                  interpretation_validator
                                                                                  ↓        ↓
-                                                                    retry_interpretation  interpreter → END
-                                                                           ↑                  ↓
-                                                                           └──────────────────┘
+                                                                    retry_interpretation  output_formatter → interpreter → END
+                                                                           ↑                                      ↓
+                                                                           └──────────────────────────────────────┘
 
     Args:
         checkpointer: Optional checkpointer for state persistence
@@ -45,6 +45,7 @@ def create_agent_workflow(checkpointer=None):
     # Data interpretation layer
     workflow.add_node("data_interpreter", nodes.data_interpreter_node)
     workflow.add_node("interpretation_validator", nodes.interpretation_validator_node)
+    workflow.add_node("output_formatter", nodes.output_formatter_node)
     workflow.add_node("interpreter", nodes.interpreter_node)
 
     # Define edges
@@ -105,23 +106,26 @@ def create_agent_workflow(checkpointer=None):
     # data_interpreter -> interpretation_validator
     workflow.add_edge("data_interpreter", "interpretation_validator")
 
-    # interpretation_validator -> data_interpreter (retry) or interpreter (final)
-    def should_retry_interpretation(state: AgentState) -> Literal["data_interpreter", "interpreter"]:
-        """Determine if we need to retry interpretation or proceed to final response."""
-        next_step = state.get("next_step", "final_interpreter")
+    # interpretation_validator -> data_interpreter (retry) or output_formatter
+    def should_retry_interpretation(state: AgentState) -> Literal["data_interpreter", "output_formatter"]:
+        """Determine if we need to retry interpretation or proceed to formatting."""
+        next_step = state.get("next_step", "output_formatter")
 
         if next_step == "retry_interpretation":
             return "data_interpreter"
-        return "interpreter"
+        return "output_formatter"
 
     workflow.add_conditional_edges(
         "interpretation_validator",
         should_retry_interpretation,
         {
             "data_interpreter": "data_interpreter",
-            "interpreter": "interpreter",
+            "output_formatter": "output_formatter",
         },
     )
+
+    # output_formatter -> interpreter
+    workflow.add_edge("output_formatter", "interpreter")
 
     # interpreter -> END
     workflow.add_edge("interpreter", END)

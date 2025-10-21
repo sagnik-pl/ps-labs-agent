@@ -17,7 +17,7 @@ class WorkflowNodes:
     def __init__(self):
         """Initialize workflow nodes with OpenAI."""
         self.llm = ChatOpenAI(
-            model="gpt-4-turbo-preview",
+            model="gpt-4o",  # Upgraded from gpt-4-turbo-preview for 2x speed improvement
             openai_api_key=settings.openai_api_key,
             temperature=0,
         )
@@ -201,8 +201,8 @@ class WorkflowNodes:
         """
         Create final user-facing response.
 
-        Uses the validated data interpretation (which has e-commerce context)
-        to generate the final response.
+        Uses the formatted output if available, otherwise falls back to
+        the data interpretation.
 
         Args:
             state: Current agent state
@@ -210,16 +210,14 @@ class WorkflowNodes:
         Returns:
             Updated state with final response
         """
-        # Use the data interpretation (already has e-commerce context)
+        # Use formatted output if available, otherwise fall back to interpretation
+        formatted_output = state.get("formatted_output", "")
         data_interpretation = state.get("data_interpretation", "")
         query = state["query"]
         plan = state.get("plan", {})
 
-        # The data_interpretation already has all the insights,
-        # so we can use it directly as the final response
-        # or add a final polish layer if needed
-
-        final_response = data_interpretation
+        # Prefer formatted output, but gracefully fall back if not available
+        final_response = formatted_output if formatted_output else data_interpretation
 
         return {
             "final_response": final_response,
@@ -401,7 +399,64 @@ class WorkflowNodes:
             "interpretation_validation": validation,
             "interpretation_feedback": validation.get("feedback", ""),
             "interpretation_retry_count": retry_count + 1 if needs_retry else retry_count,
-            "next_step": "retry_interpretation" if needs_retry else "final_interpreter",
+            "next_step": "retry_interpretation" if needs_retry else "output_formatter",
+        }
+
+    def output_formatter_node(self, state: AgentState) -> Dict[str, Any]:
+        """
+        Format the data interpretation into structured, professional markdown.
+
+        Takes the interpreted response and formats it with:
+        - Tables for data comparison
+        - Bullet points for key insights
+        - Clear action items
+        - Visual formatting for readability
+
+        Args:
+            state: Current agent state
+
+        Returns:
+            Updated state with formatted output
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Skip formatting for error responses
+        interpretation_is_error = state.get("interpretation_is_error", False)
+
+        if interpretation_is_error:
+            # Don't format error messages, pass through as-is
+            logger.info("Skipping output formatting for error response")
+            return {
+                "formatted_output": state.get("data_interpretation", ""),
+                "messages": [AIMessage(content=state.get("data_interpretation", ""))],
+            }
+
+        interpretation = state.get("data_interpretation", "")
+        query = state["query"]
+        raw_data = state.get("raw_data", "")
+
+        # Load formatter prompt from prompt manager
+        prompt = self.prompt_manager.get_agent_prompt(
+            "output_formatter",
+            variables={
+                "query": query,
+                "interpretation": interpretation,
+                "raw_data": raw_data
+            }
+        )
+
+        messages = [HumanMessage(content=prompt)]
+        response = self.llm.invoke(messages)
+
+        formatted_output = response.content
+
+        logger.info("Output formatted successfully")
+
+        return {
+            "formatted_output": formatted_output,
+            "messages": [AIMessage(content=formatted_output)],
         }
 
     def sql_generator_node(self, state: AgentState) -> Dict[str, Any]:
