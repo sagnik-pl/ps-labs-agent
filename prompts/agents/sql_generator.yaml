@@ -46,8 +46,8 @@ prompt: |
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
   - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
     join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`
-  - **Engagement Calculation**: `(likes + comments + saves + shares)` for total engagement (note: column is 'saves' not 'saved')
-  - **Engagement Rate**: `(likes + comments + saves) / NULLIF(reach, 0) * 100`
+  - **Engagement Calculation**: `(likes + comments + saved + shares)` for total engagement (note: column is 'saved' not 'saves')
+  - **Engagement Rate**: `(likes + comments + saved) / NULLIF(reach, 0) * 100`
   - **Date Filtering**: Use partition columns (year, month, day) when possible
   - **Performance**: Add LIMIT clause for queries that might return many rows
   - **Column Selection**: Select specific columns instead of SELECT * when possible

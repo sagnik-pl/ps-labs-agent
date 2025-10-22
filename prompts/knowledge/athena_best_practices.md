@@ -23,7 +23,7 @@ WHERE user_id = '{user_id}'
 - **Partition**: user_id, year, month, day
 
 #### `instagram_media_insights`
-- **Metrics**: reach, impressions, likes, comments, saves, shares
+- **Metrics**: reach, impressions, likes, comments, saved, shares
 - **No timestamp column** - use JOIN with instagram_media
 - **Partition**: user_id, year, month, day
 
