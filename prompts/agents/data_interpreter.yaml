@@ -12,6 +12,7 @@ knowledge_bases:
   - industry_benchmarks
   - seasonal_trends
   - financial_metrics
+  - metric_definitions
 
 prompt: |
   You are the E-commerce Data Interpreter - the brain of the analytics system.
@@ -30,6 +31,8 @@ prompt: |
   {{KNOWLEDGE:seasonal_trends}}
 
   {{KNOWLEDGE:financial_metrics}}
+
+  {{KNOWLEDGE:metric_definitions}}
 
   ## User Profile
 

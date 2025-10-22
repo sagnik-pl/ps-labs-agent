@@ -484,7 +484,8 @@ class WorkflowNodes:
         Generate SQL query from natural language.
 
         Takes user query and available table schemas to generate
-        a SQL query for Athena.
+        a SQL query for Athena. Enhanced with semantic layer for
+        better schema information and metric definitions.
 
         Args:
             state: Current agent state
@@ -493,6 +494,7 @@ class WorkflowNodes:
             Updated state with generated SQL
         """
         from tools.athena_tools import list_tables_tool, table_schema_tool
+        from utils.semantic_layer import semantic_layer
 
         query = state["query"]
         user_id = state["user_id"]
@@ -501,15 +503,32 @@ class WorkflowNodes:
         # Get available tables
         tables_result = list_tables_tool.invoke({"user_id": user_id})
 
-        # Get schemas for relevant tables (for now, get all)
-        # In production, you might want to intelligently select which schemas to fetch
+        # Get schemas for relevant tables using semantic layer
+        # Semantic layer provides enhanced schema with column types, descriptions, and notes
         table_schemas_list = []
         if "instagram" in query.lower():
             for table_name in ["instagram_media", "instagram_media_insights"]:
-                schema_result = table_schema_tool.invoke({"table_name": table_name})
-                table_schemas_list.append(f"**{table_name}**:\n{schema_result}")
+                # Get enhanced schema from semantic layer
+                semantic_schema = semantic_layer.get_schema_for_sql_gen(table_name)
+
+                # Also get Athena schema for column list
+                athena_schema = table_schema_tool.invoke({"table_name": table_name})
+
+                # Combine both for comprehensive information
+                combined_schema = f"{semantic_schema}\n\nAthena Schema:\n{athena_schema}"
+                table_schemas_list.append(combined_schema)
 
         table_schemas = "\n\n".join(table_schemas_list) if table_schemas_list else tables_result
+
+        # Check if query matches a known pattern
+        matched_pattern = semantic_layer.match_query_pattern(query)
+        pattern_info = ""
+        if matched_pattern:
+            pattern_def = semantic_layer.get_query_pattern(matched_pattern)
+            if pattern_def:
+                pattern_info = f"\n\n**Suggested Query Pattern**: {pattern_def.get('name')}\n"
+                pattern_info += f"Description: {pattern_def.get('description')}\n"
+                pattern_info += f"Template available if needed."
 
         # Load SQL generator prompt
         prompt = self.prompt_manager.get_agent_prompt(
@@ -517,7 +536,7 @@ class WorkflowNodes:
             variables={
                 "user_query": query,
                 "user_id": user_id,
-                "table_schemas": table_schemas,
+                "table_schemas": table_schemas + pattern_info,
                 "validation_feedback": validation_feedback or "No previous feedback"
             }
         )
@@ -545,7 +564,7 @@ class WorkflowNodes:
 
         Checks SQL query for:
         - User isolation (user_id filter)
-        - Correct table/column names
+        - Correct table/column names (using semantic layer)
         - Valid SQL syntax
         - Query completeness
         - Safety and efficiency
@@ -556,11 +575,37 @@ class WorkflowNodes:
         Returns:
             Updated state with validation results and retry decision
         """
+        from utils.semantic_layer import semantic_layer
+        import logging
+        logger = logging.getLogger(__name__)
+
         query = state["query"]
         user_id = state["user_id"]
         generated_sql = state.get("generated_sql", "")
         table_schemas = state.get("table_schemas", "")
         previous_feedback = state.get("sql_validation_feedback", "")
+
+        # Pre-validate using semantic layer for common errors
+        semantic_validation = []
+
+        # Check for 'saves' vs 'saved' error
+        if "instagram" in query.lower():
+            # Validate instagram_media_insights columns
+            validation_result = semantic_layer.validate_sql_columns(
+                generated_sql,
+                "instagram_media_insights"
+            )
+
+            if validation_result.get('invalid'):
+                invalid_cols = validation_result['invalid']
+                logger.warning(f"Invalid columns detected: {invalid_cols}")
+                semantic_validation.append(
+                    f"⚠️ COLUMN ERROR: Found invalid columns: {', '.join(invalid_cols)}. "
+                    f"Check schema carefully. Common mistake: use 'saved' not 'saves'."
+                )
+
+        # Add semantic validation to feedback
+        semantic_feedback = "\n".join(semantic_validation) if semantic_validation else ""
 
         # Load SQL validator prompt
         prompt = self.prompt_manager.get_agent_prompt(
@@ -570,7 +615,8 @@ class WorkflowNodes:
                 "sql_query": generated_sql,
                 "table_schema": table_schemas,
                 "user_id": user_id,
-                "previous_feedback": previous_feedback or "No previous feedback"
+                "previous_feedback": (previous_feedback or "No previous feedback") +
+                                   ("\n\n" + semantic_feedback if semantic_feedback else "")
             }
         )
 
