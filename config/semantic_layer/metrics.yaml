@@ -1,0 +1,190 @@
+# E-commerce Semantic Layer - Metric Definitions
+# Provides structured definitions of business metrics including formulas, interpretations, and SQL expressions
+
+version: "1.0"
+last_updated: "2025-10-22"
+
+metrics:
+  # Social Media Metrics
+  engagement_rate:
+    name: "Engagement Rate"
+    category: "social_media"
+    formula: "(likes + comments + saved + shares) / reach * 100"
+    description: "Percentage of people who engaged with content after seeing it"
+    sql_expression: "((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100"
+    data_type: "percentage"
+    interpretation:
+      good_range: [2.5, 5.0]
+      excellent_range: [5.0, 10.0]
+      poor_threshold: 1.5
+      guidance:
+        too_low: "Below 1.5% indicates content isn't resonating. Try: more Reels, better hooks, stronger CTAs"
+        optimal: "2.5-5% is solid performance. Content connects with audience. Maintain consistency."
+        excellent: "Above 5% is exceptional. Analyze what's working and replicate the approach."
+      category_benchmarks:
+        fashion_apparel: [1.8, 3.5]
+        beauty_cosmetics: [2.5, 4.5]
+        home_garden: [2.0, 3.8]
+        food_beverage: [2.8, 5.0]
+    related_metrics: ["reach", "impressions", "total_engagement"]
+    required_columns: ["likes", "comments", "saved", "shares", "reach"]
+
+  frequency:
+    name: "Frequency"
+    category: "social_media"
+    formula: "impressions / reach"
+    description: "Average number of times each user saw the content"
+    sql_expression: "CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0)"
+    data_type: "ratio"
+    interpretation:
+      good_range: [1.5, 3.0]
+      excellent_range: [2.0, 3.0]
+      poor_threshold: 1.2
+      guidance:
+        too_low: "Below 1.5 means content shown once per user. Increase posting frequency or boost top content."
+        optimal: "1.5-3.0 is ideal balance. Users see content multiple times without fatigue."
+        too_high: "Above 3.0 risks audience fatigue and wasted ad spend. Reduce frequency or expand audience."
+    related_metrics: ["reach", "impressions"]
+    required_columns: ["impressions", "reach"]
+
+  reach_rate:
+    name: "Reach Rate"
+    category: "social_media"
+    formula: "reach / followers * 100"
+    description: "Percentage of followers who saw the content"
+    sql_expression: "(CAST(i.reach AS DOUBLE) / NULLIF(a.followers, 0)) * 100"
+    data_type: "percentage"
+    interpretation:
+      good_range: [10.0, 25.0]
+      excellent_range: [25.0, 50.0]
+      poor_threshold: 5.0
+      guidance:
+        too_low: "Below 5% reach means algorithm not favoring content. Improve engagement, posting times, hashtags."
+        optimal: "10-25% reach is good organic performance. Content reaching significant portion of followers."
+        excellent: "Above 25% indicates viral potential or strong engagement patterns."
+    related_metrics: ["reach", "engagement_rate"]
+    required_columns: ["reach"]  # followers from account table
+
+  save_rate:
+    name: "Save Rate"
+    category: "social_media"
+    formula: "saved / reach * 100"
+    description: "Percentage of viewers who saved the content"
+    sql_expression: "(CAST(i.saved AS DOUBLE) / NULLIF(i.reach, 0)) * 100"
+    data_type: "percentage"
+    interpretation:
+      good_range: [0.5, 2.0]
+      excellent_range: [2.0, 5.0]
+      poor_threshold: 0.2
+      guidance:
+        too_low: "Low saves indicate content not valuable for future reference. Create more educational/reference content."
+        optimal: "0.5-2% save rate shows content has lasting value. Good for tutorials, tips, guides."
+        excellent: "Above 2% means highly valuable content. Instagram algorithm favors saves heavily."
+    related_metrics: ["engagement_rate", "reach"]
+    required_columns: ["saved", "reach"]
+    notes: "Saves are heavily weighted by Instagram algorithm. High save rate = better reach."
+
+  # E-commerce Metrics
+  conversion_rate:
+    name: "Conversion Rate"
+    category: "ecommerce"
+    formula: "orders / sessions * 100"
+    description: "Percentage of website visitors who made a purchase"
+    sql_expression: "(CAST(orders AS DOUBLE) / NULLIF(sessions, 0)) * 100"
+    data_type: "percentage"
+    interpretation:
+      good_range: [2.0, 3.5]
+      excellent_range: [3.5, 5.0]
+      poor_threshold: 1.0
+      guidance:
+        too_low: "Below 1% indicates UX issues, pricing problems, or poor traffic quality."
+        optimal: "2-3.5% is solid for most categories. Focus on incremental improvements."
+        excellent: "Above 3.5% is exceptional. Scale traffic while maintaining quality."
+      category_benchmarks:
+        fashion_apparel: [1.8, 2.5]
+        beauty_cosmetics: [2.5, 3.5]
+        home_garden: [2.0, 2.8]
+        food_beverage: [2.8, 3.5]
+        electronics: [1.5, 2.2]
+    related_metrics: ["cart_abandonment_rate", "aov"]
+    required_columns: ["orders", "sessions"]
+
+  cart_abandonment_rate:
+    name: "Cart Abandonment Rate"
+    category: "ecommerce"
+    formula: "(carts_created - orders) / carts_created * 100"
+    description: "Percentage of shoppers who added to cart but didn't purchase"
+    sql_expression: "((carts_created - orders) / NULLIF(CAST(carts_created AS DOUBLE), 0)) * 100"
+    data_type: "percentage"
+    interpretation:
+      good_range: [60.0, 70.0]  # Lower is better, but 60-70% is industry norm
+      excellent_range: [40.0, 60.0]
+      poor_threshold: 80.0
+      guidance:
+        too_high: "Above 80% indicates checkout friction, shipping costs, or trust issues."
+        optimal: "60-70% is industry average. Implement cart recovery emails and exit-intent popups."
+        excellent: "Below 60% is exceptional. Smooth checkout flow and good pricing."
+    related_metrics: ["conversion_rate", "aov"]
+    required_columns: ["carts_created", "orders"]
+    notes: "Industry average is 69.8%. Focus on reducing friction, not reaching 0%."
+
+  average_order_value:
+    name: "Average Order Value (AOV)"
+    category: "ecommerce"
+    formula: "total_revenue / orders"
+    description: "Average amount customers spend per order"
+    sql_expression: "CAST(total_revenue AS DOUBLE) / NULLIF(orders, 0)"
+    data_type: "currency"
+    interpretation:
+      category_benchmarks:
+        fashion_apparel: [65, 120]
+        beauty_cosmetics: [45, 90]
+        home_garden: [80, 180]
+        food_beverage: [35, 75]
+        electronics: [150, 400]
+      guidance:
+        strategies: "Increase AOV with: bundles, free shipping thresholds, upsells, product recommendations"
+    related_metrics: ["conversion_rate", "customer_lifetime_value"]
+    required_columns: ["total_revenue", "orders"]
+
+  roas:
+    name: "Return on Ad Spend (ROAS)"
+    category: "advertising"
+    formula: "revenue_from_ads / ad_spend"
+    description: "Revenue generated for every dollar spent on advertising"
+    sql_expression: "CAST(revenue_from_ads AS DOUBLE) / NULLIF(ad_spend, 0)"
+    data_type: "ratio"
+    interpretation:
+      good_range: [2.0, 4.0]
+      excellent_range: [4.0, 8.0]
+      poor_threshold: 1.5
+      minimum_profitable: 3.0  # General rule accounting for margins
+      guidance:
+        too_low: "Below 1.5x means losing money on ads. Pause campaigns and optimize targeting/creative."
+        profitable: "2-4x is profitable for most businesses. Focus on scaling winning campaigns."
+        excellent: "Above 4x is exceptional. Aggressively scale while monitoring for degradation."
+      category_benchmarks:
+        fashion_apparel: [2.0, 4.0]
+        beauty_cosmetics: [2.5, 5.0]
+        home_garden: [2.0, 4.0]
+    related_metrics: ["cac", "ltv"]
+    required_columns: ["revenue_from_ads", "ad_spend"]
+    notes: "Minimum profitable ROAS = 1 / gross_margin. For 40% margin, need 2.5x ROAS minimum."
+
+  customer_acquisition_cost:
+    name: "Customer Acquisition Cost (CAC)"
+    category: "advertising"
+    formula: "total_marketing_spend / new_customers"
+    description: "Cost to acquire one new customer"
+    sql_expression: "CAST(total_marketing_spend AS DOUBLE) / NULLIF(new_customers, 0)"
+    data_type: "currency"
+    interpretation:
+      guidance:
+        rule: "CAC should be less than 1/3 of LTV for healthy unit economics"
+        optimal_ltv_ratio: [3.0, 5.0]  # LTV:CAC ratio
+      category_benchmarks:
+        fashion_apparel: [20, 50]
+        beauty_cosmetics: [15, 40]
+        home_garden: [30, 70]
+    related_metrics: ["ltv", "roas"]
+    required_columns: ["total_marketing_spend", "new_customers"]

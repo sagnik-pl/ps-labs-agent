@@ -1,0 +1,274 @@
+# E-commerce Semantic Layer - Schema Catalog
+# Provides structured schema information for all data tables including column definitions and join patterns
+
+version: "1.0"
+last_updated: "2025-10-22"
+
+tables:
+  instagram_media:
+    description: "Instagram posts and reels metadata including captions, timestamps, and content type"
+    category: "social_media"
+    columns:
+      id:
+        name: "id"
+        type: "string"
+        description: "Unique identifier for the Instagram post/reel"
+        primary_key: true
+        required_for_joins: true
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "User ID for data isolation (ALWAYS filter by this)"
+        partition_key: true
+        required: true
+        filter_required: true
+      media_type:
+        name: "media_type"
+        type: "string"
+        description: "Type of content: IMAGE, VIDEO, CAROUSEL_ALBUM, REELS"
+        enum_values: ["IMAGE", "VIDEO", "CAROUSEL_ALBUM", "REELS"]
+        common_filters: ["= 'REELS'", "IN ('IMAGE', 'CAROUSEL_ALBUM')"]
+      caption:
+        name: "caption"
+        type: "string"
+        description: "Post caption/description text"
+        searchable: true
+      timestamp:
+        name: "timestamp"
+        type: "timestamp"
+        description: "When the content was posted (ISO 8601 format)"
+        time_column: true
+        common_filters: [">= date_add('day', -30, current_date)", ">= date_add('day', -7, current_date)"]
+      permalink:
+        name: "permalink"
+        type: "string"
+        description: "URL to the Instagram post"
+      username:
+        name: "username"
+        type: "string"
+        description: "Instagram username of the account"
+      year:
+        name: "year"
+        type: "int"
+        description: "Year partition for performance"
+        partition_key: true
+      month:
+        name: "month"
+        type: "int"
+        description: "Month partition for performance"
+        partition_key: true
+      day:
+        name: "day"
+        type: "int"
+        description: "Day partition for performance"
+        partition_key: true
+    primary_key: ["id", "user_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    common_joins:
+      - table: "instagram_media_insights"
+        type: "INNER JOIN"
+        on: ["id", "user_id"]
+        description: "Join to get performance metrics (reach, likes, etc.)"
+    example_queries:
+      - description: "Recent posts with timestamps"
+        sql: |
+          SELECT id, media_type, caption, timestamp
+          FROM instagram_media
+          WHERE user_id = '{user_id}'
+            AND timestamp >= date_add('day', -30, current_date)
+          ORDER BY timestamp DESC
+          LIMIT 100
+
+  instagram_media_insights:
+    description: "Performance metrics for Instagram posts including reach, engagement, and interactions"
+    category: "social_media"
+    columns:
+      id:
+        name: "id"
+        type: "string"
+        description: "Instagram post ID (matches instagram_media.id)"
+        primary_key: true
+        required_for_joins: true
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "User ID for data isolation (ALWAYS filter by this)"
+        partition_key: true
+        required: true
+        filter_required: true
+      page_id:
+        name: "page_id"
+        type: "string"
+        description: "Instagram page/account ID"
+      business_account_id:
+        name: "business_account_id"
+        type: "string"
+        description: "Business account identifier"
+      likes:
+        name: "likes"
+        type: "bigint"
+        description: "Number of likes on the post"
+        aggregatable: true
+        used_in_metrics: ["engagement_rate"]
+      reach:
+        name: "reach"
+        type: "bigint"
+        description: "Unique users who saw the content"
+        aggregatable: true
+        used_in_metrics: ["engagement_rate", "frequency", "reach_rate", "save_rate"]
+        important: true
+      saved:
+        name: "saved"
+        type: "bigint"
+        description: "Number of times content was saved by users"
+        aggregatable: true
+        used_in_metrics: ["engagement_rate", "save_rate"]
+        important: true
+        notes: "Column name is 'saved' not 'saves'. Heavily weighted by Instagram algorithm."
+      shares:
+        name: "shares"
+        type: "bigint"
+        description: "Number of times content was shared"
+        aggregatable: true
+        used_in_metrics: ["engagement_rate"]
+      follows:
+        name: "follows"
+        type: "bigint"
+        description: "Number of follows generated from this post"
+        aggregatable: true
+      comments:
+        name: "comments"
+        type: "bigint"
+        description: "Number of comments on the post"
+        aggregatable: true
+        used_in_metrics: ["engagement_rate"]
+      profile_visits:
+        name: "profile_visits"
+        type: "bigint"
+        description: "Profile visits generated from this post"
+        aggregatable: true
+      ig_reels_avg_watch_time:
+        name: "ig_reels_avg_watch_time"
+        type: "double"
+        description: "Average watch time for Reels in seconds"
+        only_for_media_type: "REELS"
+      ig_reels_video_view_total_time:
+        name: "ig_reels_video_view_total_time"
+        type: "double"
+        description: "Total watch time for Reels across all views"
+        only_for_media_type: "REELS"
+      impressions:
+        name: "impressions"
+        type: "bigint"
+        description: "Total number of times content was displayed (may include multiple views by same user)"
+        aggregatable: true
+        used_in_metrics: ["frequency"]
+        notes: "impressions >= reach always. impressions/reach = frequency."
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "When this data was processed by ETL pipeline"
+        system_column: true
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source identifier"
+        system_column: true
+      year:
+        name: "year"
+        type: "int"
+        description: "Year partition"
+        partition_key: true
+      month:
+        name: "month"
+        type: "int"
+        description: "Month partition"
+        partition_key: true
+      day:
+        name: "day"
+        type: "int"
+        description: "Day partition"
+        partition_key: true
+    primary_key: ["id", "user_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    common_joins:
+      - table: "instagram_media"
+        type: "INNER JOIN"
+        on: ["id", "user_id"]
+        description: "Join to get post metadata and timestamps (REQUIRED for time-based queries)"
+    important_notes:
+      - "NO timestamp column in this table - must JOIN with instagram_media for timestamps"
+      - "Column is 'saved' not 'saves' (common mistake)"
+      - "ALWAYS join on BOTH id AND user_id for data isolation and performance"
+      - "reach <= impressions always (reach is unique users, impressions includes repeats)"
+    example_queries:
+      - description: "Top posts by engagement with metrics"
+        sql: |
+          SELECT
+            m.media_type,
+            m.caption,
+            m.timestamp,
+            i.reach,
+            i.likes,
+            i.comments,
+            i.saved,
+            i.shares,
+            ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate
+          FROM instagram_media m
+          JOIN instagram_media_insights i
+            ON m.id = i.id AND m.user_id = i.user_id
+          WHERE m.user_id = '{user_id}'
+            AND m.timestamp >= date_add('day', -30, current_date)
+          ORDER BY engagement_rate DESC
+          LIMIT 10
+
+common_patterns:
+  user_isolation:
+    description: "CRITICAL: Always filter by user_id for data isolation and security"
+    required: true
+    pattern: "WHERE {table}.user_id = '{user_id}'"
+    notes: "user_id is a partition column - filtering improves performance"
+
+  instagram_join:
+    description: "Standard join pattern for Instagram tables"
+    pattern: |
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+    notes: "Always join on BOTH id AND user_id"
+
+  time_filters:
+    description: "Common time-based filters using partition columns when possible"
+    patterns:
+      last_7_days: "m.timestamp >= date_add('day', -7, current_date)"
+      last_30_days: "m.timestamp >= date_add('day', -30, current_date)"
+      last_90_days: "m.timestamp >= date_add('day', -90, current_date)"
+      this_month: "m.year = YEAR(current_date) AND m.month = MONTH(current_date)"
+      this_year: "m.year = YEAR(current_date)"
+
+  aggregations:
+    description: "Common aggregation patterns for metrics"
+    patterns:
+      total_engagement: "(SUM(i.likes) + SUM(i.comments) + SUM(i.saved) + SUM(i.shares))"
+      avg_engagement_rate: "AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100)"
+      total_reach: "SUM(i.reach)"
+
+query_guidelines:
+  performance:
+    - "Use partition columns (user_id, year, month, day) in WHERE clause"
+    - "Add LIMIT clause for queries that might return many rows"
+    - "Select specific columns instead of SELECT *"
+    - "Use NULLIF to prevent division by zero"
+
+  correctness:
+    - "ALWAYS include user_id filter for data isolation"
+    - "Join instagram tables on BOTH id AND user_id"
+    - "Use instagram_media.timestamp for time filters, not insights table"
+    - "Use 'saved' not 'saves' in queries"
+
+  safety:
+    - "Never use DROP, DELETE, UPDATE, or TRUNCATE"
+    - "Always filter by user_id to prevent cross-user data access"
+    - "Cast to DOUBLE before division to avoid integer truncation"
+    - "Use NULLIF on denominators to avoid division by zero errors"

@@ -1,0 +1,332 @@
+# E-commerce Semantic Layer - Query Pattern Library
+# Pre-built, optimized query templates for common analytics questions
+
+version: "1.0"
+last_updated: "2025-10-22"
+
+patterns:
+  top_performing_content:
+    name: "Top Performing Content by Engagement"
+    category: "social_media"
+    description: "Find posts with highest engagement rate in a time period"
+    use_cases:
+      - "What content performed best?"
+      - "Show top posts by engagement"
+      - "Which posts got most engagement?"
+      - "Best performing content"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 30
+      limit:
+        required: false
+        type: "int"
+        default: 10
+    template: |
+      SELECT
+        m.media_type,
+        m.caption,
+        m.timestamp,
+        i.reach,
+        i.likes,
+        i.comments,
+        i.saved,
+        i.shares,
+        (i.likes + i.comments + i.saved + i.shares) AS total_engagement,
+        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 AS engagement_rate
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+      ORDER BY engagement_rate DESC
+      LIMIT {limit}
+    metrics_calculated:
+      - "engagement_rate"
+      - "total_engagement"
+
+  content_performance_by_type:
+    name: "Content Performance by Media Type"
+    category: "social_media"
+    description: "Compare performance across different content types (Reels, Images, Carousels)"
+    use_cases:
+      - "Compare Reels vs Posts"
+      - "What media type performs best?"
+      - "Reels vs carousel performance"
+      - "Content type analysis"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 30
+    template: |
+      SELECT
+        m.media_type,
+        COUNT(*) as post_count,
+        AVG(i.reach) as avg_reach,
+        AVG(i.likes) as avg_likes,
+        AVG(i.comments) as avg_comments,
+        AVG(i.saved) as avg_saved,
+        AVG(i.shares) as avg_shares,
+        AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+      GROUP BY m.media_type
+      ORDER BY avg_engagement_rate DESC
+    metrics_calculated:
+      - "engagement_rate"
+
+  recent_posts_with_metrics:
+    name: "Recent Posts with Full Metrics"
+    category: "social_media"
+    description: "Get recent posts with all performance metrics"
+    use_cases:
+      - "Show recent posts"
+      - "Latest content performance"
+      - "Recent post metrics"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 7
+      limit:
+        required: false
+        type: "int"
+        default: 20
+    template: |
+      SELECT
+        m.timestamp,
+        m.media_type,
+        m.caption,
+        i.reach,
+        i.impressions,
+        i.likes,
+        i.comments,
+        i.saved,
+        i.shares,
+        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate,
+        CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0) as frequency
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+      ORDER BY m.timestamp DESC
+      LIMIT {limit}
+    metrics_calculated:
+      - "engagement_rate"
+      - "frequency"
+
+  high_save_rate_content:
+    name: "High Save Rate Content"
+    category: "social_media"
+    description: "Find content with highest save rates (valuable/educational content)"
+    use_cases:
+      - "Most saved posts"
+      - "Valuable content"
+      - "Educational posts"
+      - "Content worth saving"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 30
+      min_reach:
+        required: false
+        type: "int"
+        default: 100
+        description: "Minimum reach to avoid statistical noise"
+      limit:
+        required: false
+        type: "int"
+        default: 10
+    template: |
+      SELECT
+        m.media_type,
+        m.caption,
+        m.timestamp,
+        i.reach,
+        i.saved,
+        (CAST(i.saved AS DOUBLE) / NULLIF(i.reach, 0)) * 100 as save_rate,
+        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+        AND i.reach >= {min_reach}
+      ORDER BY save_rate DESC
+      LIMIT {limit}
+    metrics_calculated:
+      - "save_rate"
+      - "engagement_rate"
+
+  posting_frequency_analysis:
+    name: "Posting Frequency Over Time"
+    category: "social_media"
+    description: "Analyze posting patterns and frequency trends"
+    use_cases:
+      - "How often do I post?"
+      - "Posting frequency analysis"
+      - "Content calendar analysis"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 90
+    template: |
+      SELECT
+        DATE_TRUNC('day', m.timestamp) as date,
+        COUNT(*) as posts_per_day,
+        AVG(i.reach) as avg_reach,
+        AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+      GROUP BY DATE_TRUNC('day', m.timestamp)
+      ORDER BY date DESC
+    metrics_calculated:
+      - "engagement_rate"
+
+  viral_content_potential:
+    name: "Viral/High-Performing Content"
+    category: "social_media"
+    description: "Find content that significantly outperformed average"
+    use_cases:
+      - "Viral posts"
+      - "Best ever content"
+      - "Outlier performance"
+      - "Breakout posts"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 90
+      multiplier:
+        required: false
+        type: "float"
+        default: 2.0
+        description: "How many times above average to consider viral"
+    template: |
+      WITH avg_metrics AS (
+        SELECT
+          AVG(i.reach) as avg_reach,
+          AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate
+        FROM instagram_media m
+        JOIN instagram_media_insights i
+          ON m.id = i.id AND m.user_id = i.user_id
+        WHERE m.user_id = '{user_id}'
+          AND m.timestamp >= date_add('day', -{days}, current_date)
+      )
+      SELECT
+        m.media_type,
+        m.caption,
+        m.timestamp,
+        i.reach,
+        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate,
+        i.reach / NULLIF(a.avg_reach, 0) as reach_vs_avg,
+        (((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100) / NULLIF(a.avg_engagement_rate, 0) as engagement_vs_avg
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      CROSS JOIN avg_metrics a
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+        AND (i.reach >= a.avg_reach * {multiplier}
+         OR ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) >= a.avg_engagement_rate * {multiplier})
+      ORDER BY reach_vs_avg DESC, engagement_vs_avg DESC
+    metrics_calculated:
+      - "engagement_rate"
+      - "reach_vs_avg"
+      - "engagement_vs_avg"
+
+  time_series_performance:
+    name: "Time Series Performance Trends"
+    category: "social_media"
+    description: "Weekly or monthly aggregated performance metrics"
+    use_cases:
+      - "Weekly performance trends"
+      - "Monthly analytics"
+      - "Performance over time"
+      - "Growth trends"
+    parameters:
+      user_id:
+        required: true
+        type: "string"
+      days:
+        required: false
+        type: "int"
+        default: 90
+      granularity:
+        required: false
+        type: "string"
+        default: "week"
+        enum: ["day", "week", "month"]
+    template: |
+      SELECT
+        DATE_TRUNC('{granularity}', m.timestamp) as period,
+        COUNT(*) as total_posts,
+        AVG(i.reach) as avg_reach,
+        AVG(i.impressions) as avg_impressions,
+        AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate,
+        AVG(CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0)) as avg_frequency,
+        SUM(i.reach) as total_reach,
+        SUM(i.likes + i.comments + i.saved + i.shares) as total_engagement
+      FROM instagram_media m
+      JOIN instagram_media_insights i
+        ON m.id = i.id AND m.user_id = i.user_id
+      WHERE m.user_id = '{user_id}'
+        AND m.timestamp >= date_add('day', -{days}, current_date)
+      GROUP BY DATE_TRUNC('{granularity}', m.timestamp)
+      ORDER BY period DESC
+    metrics_calculated:
+      - "engagement_rate"
+      - "frequency"
+
+pattern_matching:
+  keywords:
+    top_performing: ["top_performing_content", "content_performance_by_type"]
+    recent: ["recent_posts_with_metrics"]
+    saved: ["high_save_rate_content"]
+    frequency: ["posting_frequency_analysis"]
+    viral: ["viral_content_potential"]
+    trends: ["time_series_performance"]
+    compare: ["content_performance_by_type"]
+
+  question_patterns:
+    - pattern: ".*best.*content.*"
+      suggested_patterns: ["top_performing_content", "viral_content_potential"]
+    - pattern: ".*recent.*post.*"
+      suggested_patterns: ["recent_posts_with_metrics"]
+    - pattern: ".*reel.*vs.*post.*"
+      suggested_patterns: ["content_performance_by_type"]
+    - pattern: ".*saved.*content.*"
+      suggested_patterns: ["high_save_rate_content"]
+    - pattern: ".*how often.*post.*"
+      suggested_patterns: ["posting_frequency_analysis"]
+    - pattern: ".*performance.*time.*"
+      suggested_patterns: ["time_series_performance"]
