@@ -39,7 +39,7 @@ class WorkflowNodes:
             Updated state with execution plan
         """
         from utils.profile_defaults import format_profile_for_prompt
-        from utils.semantic_layer import check_data_availability
+        from utils.semantic_layer import check_data_availability, detect_ambiguous_query
 
         query = state["query"]
         context = state.get("context", "")
@@ -60,6 +60,34 @@ class WorkflowNodes:
                 },
                 "next_step": "END",  # Skip rest of workflow
                 "messages": [AIMessage(content=data_check['suggestion'])]
+            }
+
+        # ========== CHECK 2: Ambiguous Query Detection ==========
+        # Check if query is too vague and needs clarification
+        ambiguity_check = detect_ambiguous_query(query)
+
+        if ambiguity_check['is_ambiguous']:
+            # Query is ambiguous - ask for clarification
+            # Format the options nicely for the user
+            question = ambiguity_check['clarification_question']
+            options_list = []
+            for i, option in enumerate(ambiguity_check['options'], 1):
+                options_list.append(
+                    f"{i}. **{option['label']}**: {option['description']}"
+                )
+
+            formatted_message = f"{question}\n\n" + "\n".join(options_list)
+
+            return {
+                "execution_plan": {
+                    "type": "needs_clarification",
+                    "message": formatted_message,
+                    "ambiguous_terms": ambiguity_check['ambiguous_terms'],
+                    "clarification_question": question,
+                    "options": ambiguity_check['options']
+                },
+                "next_step": "END",  # Wait for user to provide more specific query
+                "messages": [AIMessage(content=formatted_message)]
             }
 
         # Format profile context for injection

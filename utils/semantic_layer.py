@@ -515,6 +515,200 @@ class SemanticLayer:
             'suggestion': None
         }
 
+    def detect_ambiguous_query(self, user_query: str) -> Dict[str, Any]:
+        """
+        Detect if a user query is too ambiguous and needs clarification.
+
+        Identifies vague terms that could mean multiple things in an e-commerce context
+        and suggests specific follow-up questions to ask the user.
+
+        Args:
+            user_query: Natural language query from user
+
+        Returns:
+            Dict with:
+                - is_ambiguous: bool (True if query needs clarification)
+                - ambiguous_terms: list (vague terms found in query)
+                - clarification_question: str (polite question to ask user)
+                - options: list[dict] (multiple choice options for user)
+                    Each option: {"label": str, "description": str, "focus": str}
+        """
+        query_lower = user_query.lower()
+
+        # Define ambiguous terms and their possible interpretations
+        AMBIGUOUS_TERMS = {
+            "business": {
+                "question": "I can help analyze your business! What aspect would you like to focus on?",
+                "options": [
+                    {
+                        "label": "Revenue & Sales",
+                        "description": "Overall revenue trends, sales performance, and growth rates",
+                        "focus": "revenue"
+                    },
+                    {
+                        "label": "Ad Performance & ROI",
+                        "description": "Advertising spend efficiency, ROAS, and campaign effectiveness",
+                        "focus": "advertising"
+                    },
+                    {
+                        "label": "Customer Acquisition",
+                        "description": "Customer acquisition cost, conversion rates, and funnel metrics",
+                        "focus": "acquisition"
+                    },
+                    {
+                        "label": "Profitability",
+                        "description": "Profit margins, P&L analysis, and cost breakdowns",
+                        "focus": "profit"
+                    }
+                ]
+            },
+            "performance": {
+                "question": "I can analyze performance metrics! What type of performance are you interested in?",
+                "options": [
+                    {
+                        "label": "Social Media Engagement",
+                        "description": "Likes, comments, shares, saves, and engagement rates on Instagram",
+                        "focus": "engagement"
+                    },
+                    {
+                        "label": "Ad Campaign Performance",
+                        "description": "Ad reach, impressions, CTR, conversions, and ROAS",
+                        "focus": "ad_performance"
+                    },
+                    {
+                        "label": "Content Performance",
+                        "description": "Top-performing posts, reels, stories, and content types",
+                        "focus": "content"
+                    },
+                    {
+                        "label": "Sales & Conversions",
+                        "description": "Conversion rates, sales growth, and revenue performance",
+                        "focus": "sales"
+                    }
+                ]
+            },
+            "doing": {
+                "question": "I can provide various insights! What would you like to know about?",
+                "options": [
+                    {
+                        "label": "Growth Trends",
+                        "description": "Are metrics growing, declining, or staying flat over time?",
+                        "focus": "trends"
+                    },
+                    {
+                        "label": "Profitability",
+                        "description": "Are we making money? What are the profit margins?",
+                        "focus": "profit"
+                    },
+                    {
+                        "label": "Efficiency",
+                        "description": "How efficiently are we using our marketing budget and resources?",
+                        "focus": "efficiency"
+                    },
+                    {
+                        "label": "Overall Health",
+                        "description": "High-level summary of key business metrics and indicators",
+                        "focus": "summary"
+                    }
+                ]
+            },
+            "content": {
+                "question": "I can analyze different types of content! Which content are you referring to?",
+                "options": [
+                    {
+                        "label": "Instagram Posts",
+                        "description": "Feed posts (single images, carousels)",
+                        "focus": "posts"
+                    },
+                    {
+                        "label": "Instagram Reels",
+                        "description": "Short-form video content",
+                        "focus": "reels"
+                    },
+                    {
+                        "label": "Instagram Stories",
+                        "description": "24-hour ephemeral content",
+                        "focus": "stories"
+                    },
+                    {
+                        "label": "All Content Types",
+                        "description": "Compare performance across all content formats",
+                        "focus": "all_content"
+                    }
+                ]
+            },
+            "trending": {
+                "question": "I can show you what's trending! What specifically are you looking for?",
+                "options": [
+                    {
+                        "label": "Trending Posts",
+                        "description": "Your best-performing recent content",
+                        "focus": "trending_posts"
+                    },
+                    {
+                        "label": "Trending Topics",
+                        "description": "Popular themes and subjects in your niche",
+                        "focus": "trending_topics"
+                    },
+                    {
+                        "label": "Trending Products",
+                        "description": "Products driving the most engagement or sales",
+                        "focus": "trending_products"
+                    }
+                ]
+            }
+        }
+
+        # Check if query is very short and vague (high likelihood of ambiguity)
+        words = query_lower.split()
+        is_very_short = len(words) <= 5
+
+        # Detect ambiguous terms
+        found_ambiguous_terms = []
+        clarification_data = None
+
+        for term, term_data in AMBIGUOUS_TERMS.items():
+            # Check if term appears in query
+            # Use word boundary matching to avoid false positives (e.g., "busy" shouldn't match "business")
+            if re.search(rf'\b{term}\b', query_lower):
+                found_ambiguous_terms.append(term)
+                # Use the first matching ambiguous term for clarification
+                if not clarification_data:
+                    clarification_data = term_data
+
+        # Additional heuristics for ambiguous queries
+        vague_phrases = [
+            "how is", "how are", "how's",
+            "what about", "tell me about",
+            "show me", "give me",
+            "analyze", "check"
+        ]
+
+        has_vague_phrase = any(phrase in query_lower for phrase in vague_phrases)
+
+        # Query is ambiguous if:
+        # 1. Contains ambiguous term AND is short/vague, OR
+        # 2. Is very short (≤3 words) and contains vague phrases
+        is_ambiguous = (
+            (found_ambiguous_terms and is_very_short) or
+            (len(words) <= 3 and has_vague_phrase)
+        )
+
+        if is_ambiguous and clarification_data:
+            return {
+                'is_ambiguous': True,
+                'ambiguous_terms': found_ambiguous_terms,
+                'clarification_question': clarification_data['question'],
+                'options': clarification_data['options']
+            }
+
+        return {
+            'is_ambiguous': False,
+            'ambiguous_terms': [],
+            'clarification_question': None,
+            'options': []
+        }
+
 
 # Global singleton instance
 semantic_layer = SemanticLayer()
@@ -545,3 +739,8 @@ def match_query_pattern(user_query: str) -> Optional[str]:
 def check_data_availability(user_query: str) -> Dict[str, Any]:
     """Check if user is asking for data we don't have."""
     return semantic_layer.check_data_availability(user_query)
+
+
+def detect_ambiguous_query(user_query: str) -> Dict[str, Any]:
+    """Detect if query is ambiguous and needs clarification."""
+    return semantic_layer.detect_ambiguous_query(user_query)
