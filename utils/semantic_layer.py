@@ -374,6 +374,10 @@ class SemanticLayer:
             if col_def.get('important'):
                 line += " [IMPORTANT]"
 
+            # Add column-specific notes (e.g., "Column name is 'saved' not 'saves'")
+            if col_def.get('notes'):
+                line += f" [NOTE: {col_def['notes']}]"
+
             lines.append(line)
 
         # Add notes
@@ -395,7 +399,7 @@ class SemanticLayer:
             table_name: Primary table being queried
 
         Returns:
-            Dict with 'valid' and 'invalid' column lists
+            Dict with 'valid' and 'invalid' column lists, plus 'suggestions' for common mistakes
         """
         table = self.get_table_schema(table_name)
         if not table:
@@ -403,23 +407,40 @@ class SemanticLayer:
 
         valid_columns = set(self.list_table_columns(table_name))
 
-        # Extract column references from SQL (simple regex approach)
+        # Extract column references from SQL (improved regex)
         # Matches patterns like "i.column_name" or "table.column_name"
-        column_pattern = r'\b[a-z_]+\.(saved|likes|comments|reach|shares|impressions|[a-z_]+)\b'
-        found_columns = re.findall(column_pattern, sql_query.lower())
+        column_pattern = r'\b[a-z_]+\.([a-z_]+)\b'
+        matches = re.findall(column_pattern, sql_query.lower())
 
         valid = []
         invalid = []
+        suggestions = {}
 
-        for col in set(found_columns):
+        # Common column name mistakes
+        common_mistakes = {
+            'saves': 'saved',  # Most common mistake!
+            'save': 'saved',
+            'like': 'likes',
+            'comment': 'comments',
+            'share': 'shares',
+            'impression': 'impressions',
+        }
+
+        for col in set(matches):
             if col in valid_columns:
                 valid.append(col)
             else:
                 invalid.append(col)
+                # Check if it's a common mistake
+                if col in common_mistakes:
+                    correct_col = common_mistakes[col]
+                    if correct_col in valid_columns:
+                        suggestions[col] = correct_col
 
         return {
             'valid': valid,
-            'invalid': invalid
+            'invalid': invalid,
+            'suggestions': suggestions
         }
 
 

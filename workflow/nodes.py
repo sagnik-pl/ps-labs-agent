@@ -598,11 +598,19 @@ class WorkflowNodes:
 
             if validation_result.get('invalid'):
                 invalid_cols = validation_result['invalid']
+                suggestions = validation_result.get('suggestions', {})
                 logger.warning(f"Invalid columns detected: {invalid_cols}")
-                semantic_validation.append(
-                    f"⚠️ COLUMN ERROR: Found invalid columns: {', '.join(invalid_cols)}. "
-                    f"Check schema carefully. Common mistake: use 'saved' not 'saves'."
-                )
+
+                error_msg = f"⚠️ COLUMN ERROR: Found invalid columns: {', '.join(invalid_cols)}."
+
+                # Add specific suggestions if available
+                if suggestions:
+                    corrections = [f"'{wrong}' → '{correct}'" for wrong, correct in suggestions.items()]
+                    error_msg += f" Did you mean: {', '.join(corrections)}?"
+                else:
+                    error_msg += " Check schema carefully. Common mistake: use 'saved' not 'saves'."
+
+                semantic_validation.append(error_msg)
 
         # Add semantic validation to feedback
         semantic_feedback = "\n".join(semantic_validation) if semantic_validation else ""
