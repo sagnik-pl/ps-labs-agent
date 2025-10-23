@@ -515,6 +515,149 @@ class SemanticLayer:
             'suggestion': None
         }
 
+    def detect_comparison_query(self, user_query: str) -> Dict[str, Any]:
+        """
+        Detect if a user query is asking for a comparison.
+
+        Identifies comparison keywords and extracts what's being compared:
+        - Time periods (Jan vs Feb, this week vs last week, 2024 vs 2023)
+        - Content types (Reels vs Posts, Images vs Videos)
+        - Campaigns (Campaign A vs Campaign B)
+        - Metrics (Engagement vs Reach)
+
+        Args:
+            user_query: Natural language query from user
+
+        Returns:
+            Dict with:
+                - is_comparison: bool (True if query requests comparison)
+                - comparison_type: str ("time_period", "content_type", "campaign", "metric")
+                - comparison_items: list[str] (things being compared)
+                - comparison_dimension: str (what aspect: "performance", "cost", "engagement")
+                - original_query: str (preserved for context)
+        """
+        query_lower = user_query.lower()
+
+        # Comparison keywords
+        COMPARISON_KEYWORDS = [
+            'compare', 'comparison', 'versus', 'vs', 'vs.',
+            'compared to', 'compared with', 'difference between',
+            'better than', 'worse than', 'against'
+        ]
+
+        # Check if query contains comparison keywords
+        has_comparison_keyword = any(keyword in query_lower for keyword in COMPARISON_KEYWORDS)
+
+        if not has_comparison_keyword:
+            return {
+                'is_comparison': False,
+                'comparison_type': None,
+                'comparison_items': [],
+                'comparison_dimension': None,
+                'original_query': user_query
+            }
+
+        # ========== Detect Comparison Type ==========
+
+        # 1. Time Period Comparisons
+        TIME_PATTERNS = [
+            # Month comparisons
+            (r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:vs|versus|compared to)\s+(january|february|march|april|may|june|july|august|september|october|november|december)', 'time_period'),
+            (r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(?:vs|versus|compared to)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)', 'time_period'),
+
+            # Week/Month/Year comparisons
+            (r'this\s+(week|month|quarter|year)\s+(?:vs|versus|compared to)\s+last\s+(week|month|quarter|year)', 'time_period'),
+            (r'last\s+(week|month|quarter|year)\s+(?:vs|versus|compared to)\s+this\s+(week|month|quarter|year)', 'time_period'),
+
+            # Specific time ranges
+            (r'(\d{4})\s+(?:vs|versus|compared to)\s+(\d{4})', 'time_period'),  # 2024 vs 2023
+            (r'last\s+(\d+)\s+days?\s+(?:vs|versus|compared to)\s+previous\s+(\d+)\s+days?', 'time_period'),
+        ]
+
+        # 2. Content Type Comparisons
+        CONTENT_TYPE_PATTERNS = [
+            (r'(reels?|videos?)\s+(?:vs|versus|compared to)\s+(posts?|images?|photos?)', 'content_type'),
+            (r'(posts?|images?|photos?)\s+(?:vs|versus|compared to)\s+(reels?|videos?)', 'content_type'),
+            (r'(carousel|carousels)\s+(?:vs|versus|compared to)\s+(single|static)\s+(image|post)', 'content_type'),
+            (r'(stories)\s+(?:vs|versus|compared to)\s+(feed\s+posts?|reels?)', 'content_type'),
+        ]
+
+        # 3. Campaign/Ad Set Comparisons
+        CAMPAIGN_PATTERNS = [
+            (r'campaign\s+([a-zA-Z0-9_-]+)\s+(?:vs|versus|compared to)\s+campaign\s+([a-zA-Z0-9_-]+)', 'campaign'),
+            (r'ad\s+set\s+([a-zA-Z0-9_-]+)\s+(?:vs|versus|compared to)\s+ad\s+set\s+([a-zA-Z0-9_-]+)', 'campaign'),
+        ]
+
+        # Try to match patterns
+        comparison_type = None
+        comparison_items = []
+
+        # Check time patterns
+        for pattern, ctype in TIME_PATTERNS:
+            match = re.search(pattern, query_lower, re.IGNORECASE)
+            if match:
+                comparison_type = ctype
+                comparison_items = [match.group(1), match.group(2) if match.lastindex >= 2 else None]
+                comparison_items = [item for item in comparison_items if item]  # Remove None
+                break
+
+        # Check content type patterns if no time match
+        if not comparison_type:
+            for pattern, ctype in CONTENT_TYPE_PATTERNS:
+                match = re.search(pattern, query_lower, re.IGNORECASE)
+                if match:
+                    comparison_type = ctype
+                    comparison_items = [match.group(1), match.group(2) if match.lastindex >= 2 else None]
+                    comparison_items = [item for item in comparison_items if item]
+                    break
+
+        # Check campaign patterns if no other match
+        if not comparison_type:
+            for pattern, ctype in CAMPAIGN_PATTERNS:
+                match = re.search(pattern, query_lower, re.IGNORECASE)
+                if match:
+                    comparison_type = ctype
+                    comparison_items = [match.group(1), match.group(2) if match.lastindex >= 2 else None]
+                    comparison_items = [item for item in comparison_items if item]
+                    break
+
+        # Default to generic comparison if we found keyword but no specific pattern
+        if not comparison_type and has_comparison_keyword:
+            comparison_type = 'generic'
+            # Try to extract two items around 'vs' or 'versus'
+            vs_match = re.search(r'(\w+(?:\s+\w+)?)\s+(?:vs|versus)\s+(\w+(?:\s+\w+)?)', query_lower)
+            if vs_match:
+                comparison_items = [vs_match.group(1), vs_match.group(2)]
+
+        # ========== Detect Comparison Dimension ==========
+        # What aspect are we comparing? (performance, cost, engagement, etc.)
+
+        DIMENSION_KEYWORDS = {
+            'performance': ['perform', 'performance', 'doing', 'results'],
+            'engagement': ['engagement', 'likes', 'comments', 'shares', 'interaction'],
+            'reach': ['reach', 'impressions', 'views', 'audience'],
+            'cost': ['cost', 'spend', 'budget', 'roas', 'roi', 'cpa', 'cpc'],
+            'sales': ['sales', 'revenue', 'conversions', 'purchases'],
+        }
+
+        comparison_dimension = None
+        for dimension, keywords in DIMENSION_KEYWORDS.items():
+            if any(keyword in query_lower for keyword in keywords):
+                comparison_dimension = dimension
+                break
+
+        # Default to 'performance' if no specific dimension found
+        if not comparison_dimension:
+            comparison_dimension = 'performance'
+
+        return {
+            'is_comparison': True,
+            'comparison_type': comparison_type,
+            'comparison_items': comparison_items,
+            'comparison_dimension': comparison_dimension,
+            'original_query': user_query
+        }
+
     def detect_ambiguous_query(self, user_query: str) -> Dict[str, Any]:
         """
         Detect if a user query is too ambiguous and needs clarification.
@@ -744,3 +887,8 @@ def check_data_availability(user_query: str) -> Dict[str, Any]:
 def detect_ambiguous_query(user_query: str) -> Dict[str, Any]:
     """Detect if query is ambiguous and needs clarification."""
     return semantic_layer.detect_ambiguous_query(user_query)
+
+
+def detect_comparison_query(user_query: str) -> Dict[str, Any]:
+    """Detect if query is asking for a comparison between two things."""
+    return semantic_layer.detect_comparison_query(user_query)

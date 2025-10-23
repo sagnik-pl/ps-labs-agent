@@ -13,13 +13,17 @@ def create_agent_workflow(checkpointer=None):
     Create the LangGraph agent workflow.
 
     Workflow:
-    START → planner → router → sql_generator → sql_validator → sql_executor → data_interpreter
-                                     ↑              ↓                              ↓
-                                     └─ retry_sql ──┘                  interpretation_validator
-                                                                                 ↓        ↓
-                                                                    retry_interpretation  output_formatter → interpreter → END
-                                                                           ↑                                      ↓
-                                                                           └──────────────────────────────────────┘
+    START → planner ──→ router → sql_generator → sql_validator → sql_executor → data_interpreter
+              ↓                        ↑              ↓                              ↓
+              ↓                        └─ retry_sql ──┘                  interpretation_validator
+              ↓                                                                    ↓        ↓
+              ↓                                                       retry_interpretation  output_formatter → interpreter → END
+              ↓                                                              ↑                     ↑                 ↓
+              ↓                                                              └─────────────────────┘                 └──────────┘
+              ↓
+              └─→ parallel_comparison (for "compare X vs Y" queries) ────────────────────────────┘
+              ↓
+              └─→ END (for out-of-scope / needs-clarification)
 
     Args:
         checkpointer: Optional checkpointer for state persistence
@@ -42,6 +46,9 @@ def create_agent_workflow(checkpointer=None):
     workflow.add_node("sql_validator", nodes.sql_validator_node)
     workflow.add_node("sql_executor", nodes.sql_executor_node)
 
+    # Parallel comparison execution layer
+    workflow.add_node("parallel_comparison", nodes.parallel_comparison_node)
+
     # Data interpretation layer
     workflow.add_node("data_interpreter", nodes.data_interpreter_node)
     workflow.add_node("interpretation_validator", nodes.interpretation_validator_node)
@@ -52,8 +59,31 @@ def create_agent_workflow(checkpointer=None):
     # START -> planner
     workflow.add_edge(START, "planner")
 
-    # planner -> router
-    workflow.add_edge("planner", "router")
+    # planner -> router OR parallel_comparison OR END (for early exits like out-of-scope/needs-clarification)
+    def route_from_planner(state: AgentState) -> Literal["router", "parallel_comparison", "END"]:
+        """Determine next step from planner: router for normal flow, parallel_comparison for comparisons, or END for early exits."""
+        next_step = state.get("next_step", "router")
+
+        # Handle early exits (out-of-scope queries, needs clarification)
+        if next_step == "END":
+            return END
+
+        # Handle comparison queries
+        if next_step == "parallel_execute":
+            return "parallel_comparison"
+
+        # Normal routing flow
+        return "router"
+
+    workflow.add_conditional_edges(
+        "planner",
+        route_from_planner,
+        {
+            "router": "router",
+            "parallel_comparison": "parallel_comparison",
+            "END": END
+        }
+    )
 
     # router -> sql_generator (for data analytics queries)
     def route_to_agent(state: AgentState) -> str:
@@ -102,6 +132,9 @@ def create_agent_workflow(checkpointer=None):
 
     # sql_executor -> data_interpreter
     workflow.add_edge("sql_executor", "data_interpreter")
+
+    # parallel_comparison -> output_formatter (skip interpretation since it's already formatted)
+    workflow.add_edge("parallel_comparison", "output_formatter")
 
     # data_interpreter -> interpretation_validator
     workflow.add_edge("data_interpreter", "interpretation_validator")
