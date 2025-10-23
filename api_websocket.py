@@ -182,8 +182,12 @@ async def process_query_with_progress(
         session_id: WebSocket session ID
     """
     try:
+        logger.info(f"📨 [START] Processing query for user {user_id[:8]}..., conversation {conversation_id[:8]}...")
+        logger.info(f"📝 Query: {query[:100]}..." if len(query) > 100 else f"📝 Query: {query}")
+
         # Check if this is a new conversation
         is_new = firebase_client.is_new_conversation(user_id, conversation_id)
+        logger.info(f"🆕 New conversation: {is_new}")
 
         # Generate title for new conversations
         conversation_title = None
@@ -210,19 +214,25 @@ async def process_query_with_progress(
 
         # Get conversation context from Firestore
         try:
+            logger.info(f"📚 Loading conversation context from Firestore...")
             context = firebase_client.get_context_summary(user_id, conversation_id)
-        except Exception:
+            logger.info(f"✅ Context loaded: {len(context)} characters")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load context: {e}")
             context = ""
 
         # Get user profile from Firestore
         try:
+            logger.info(f"👤 Loading user profile from Firestore...")
             user_profile = firebase_client.get_user_profile(user_id)
+            logger.info(f"✅ User profile loaded: {user_profile.get('business_name', 'N/A') if user_profile else 'None'}")
         except Exception as e:
-            logger.warning(f"Could not load user profile: {e}")
+            logger.warning(f"⚠️ Could not load user profile: {e}")
             user_profile = None
 
         # Save user message to Firestore (with title if new conversation)
         try:
+            logger.info(f"💾 Saving user message to Firestore...")
             firebase_client.save_message(
                 user_id,
                 conversation_id,
@@ -230,8 +240,9 @@ async def process_query_with_progress(
                 query,
                 title=conversation_title
             )
+            logger.info(f"✅ User message saved successfully")
         except Exception as e:
-            logger.warning(f"Could not save message to Firestore: {e}")
+            logger.warning(f"❌ Could not save user message to Firestore: {e}")
 
         # Prepare state
         initial_state = {
@@ -263,6 +274,7 @@ async def process_query_with_progress(
         final_result = None
 
         try:
+            logger.info(f"🚀 Starting workflow execution...")
             # Stream workflow execution and send progress for each node
             async for event in workflow.astream(initial_state, config=config):
                 # Validate event is a dict
@@ -291,6 +303,7 @@ async def process_query_with_progress(
                     elif "interpretation_retry_count" in node_output:
                         retry_count = node_output.get("interpretation_retry_count", 0)
 
+                    logger.info(f"⚙️ Workflow node: {node_name} (retry: {retry_count})")
                     await manager.send_progress(session_id, node_name, retry_count)
 
                     # Store the latest result
@@ -298,9 +311,10 @@ async def process_query_with_progress(
 
             # Use the final result from the last node
             result = final_result if final_result else {}
+            logger.info(f"✅ Workflow completed successfully")
 
         except Exception as stream_error:
-            logger.error(f"Error during workflow streaming: {stream_error}")
+            logger.error(f"❌ Error during workflow streaming: {stream_error}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             # Don't raise - handle error response below
@@ -309,9 +323,11 @@ async def process_query_with_progress(
         # Send final result
         final_response = result.get("final_response", "No response generated")
         metadata = result.get("metadata", {})
+        logger.info(f"📤 Final response ready: {len(final_response)} characters")
 
         # Save response to Firestore (both success and error cases)
         try:
+            logger.info(f"💾 Saving assistant response to Firestore...")
             firebase_client.save_message(
                 user_id,
                 conversation_id,
@@ -319,11 +335,13 @@ async def process_query_with_progress(
                 final_response,
                 metadata=metadata
             )
+            logger.info(f"✅ Assistant response saved successfully")
         except Exception as e:
-            logger.warning(f"Could not save response to Firestore: {e}")
+            logger.error(f"❌ Could not save assistant response to Firestore: {e}")
 
         # Send final result to user
         if metadata.get("error", False):
+            logger.info(f"📡 Sending error response to user...")
             import traceback
             await manager.send_error(
                 session_id,
@@ -331,15 +349,20 @@ async def process_query_with_progress(
                 traceback.format_exc()
             )
         else:
+            logger.info(f"📡 Sending completed response to user...")
             await manager.send_completed(session_id, final_response, metadata)
 
+        logger.info(f"🎯 [COMPLETE] Query processing finished successfully")
+
     except Exception as e:
-        logger.error(f"Error processing query: {e}")
+        logger.error(f"💥 [OUTER ERROR] Fatal error processing query: {e}")
         import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         error_msg = f"I encountered an error: {str(e)}"
 
         # Try to save error message to Firestore
         try:
+            logger.info(f"💾 Attempting to save error message to Firestore...")
             firebase_client.save_message(
                 user_id,
                 conversation_id,
@@ -347,9 +370,11 @@ async def process_query_with_progress(
                 error_msg,
                 metadata={"error": True}
             )
+            logger.info(f"✅ Error message saved to Firestore")
         except Exception as save_error:
-            logger.warning(f"Could not save error message to Firestore: {save_error}")
+            logger.error(f"❌ Could not save error message to Firestore: {save_error}")
 
+        logger.info(f"📡 Sending error to user...")
         await manager.send_error(
             session_id,
             str(e),
