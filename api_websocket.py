@@ -269,6 +269,14 @@ async def process_query_with_progress(
                 for node_name, node_output in event.items():
                     # Skip special nodes
                     if node_name.startswith("__"):
+                        # For __end__ node, store the final state
+                        if node_name == "__end__" and isinstance(node_output, dict):
+                            final_result = node_output
+                        continue
+
+                    # Validate node_output is a dict
+                    if not isinstance(node_output, dict):
+                        logger.warning(f"Node {node_name} returned non-dict output: {type(node_output)}")
                         continue
 
                     # Send progress update for this node
@@ -288,6 +296,8 @@ async def process_query_with_progress(
 
         except Exception as stream_error:
             logger.error(f"Error during workflow streaming: {stream_error}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
         # Send final result
