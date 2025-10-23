@@ -740,6 +740,8 @@ class WorkflowNodes:
 
                 logger.info(f"SQL query executed successfully for user {user_id[:8]}... (attempts: {retry_count + 1})")
                 return {
+                    "user_id": user_id,  # CRITICAL: Maintain user_id for data isolation
+                    "query": state["query"],  # Maintain query for next nodes
                     "agent_results": {
                         "agent": "sql_executor",
                         "result": result,
@@ -803,6 +805,8 @@ class WorkflowNodes:
                     error_msg = f"Error executing SQL query: {error_details}\n\nQuery:\n{generated_sql}"
 
                     return {
+                        "user_id": user_id,  # CRITICAL: Maintain user_id for data isolation
+                        "query": state["query"],  # Maintain query for next nodes
                         "agent_results": {
                             "agent": "sql_executor",
                             "result": error_msg,
