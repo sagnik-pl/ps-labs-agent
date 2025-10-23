@@ -172,14 +172,14 @@ tables:
         type: double
         description: Total watch time for Reels across all views
         only_for_media_type: REELS
-      impressions:
-        name: impressions
-        type: bigint
-        description: Total number of times content was displayed (may include multiple views by same user)
-        aggregatable: true
-        used_in_metrics:
-        - frequency
-        notes: impressions >= reach always. impressions/reach = frequency.
+      # impressions:
+      #   name: impressions
+      #   type: bigint
+      #   description: Total number of times content was displayed (may include multiple views by same user)
+      #   aggregatable: true
+      #   used_in_metrics:
+      #   - frequency
+      #   notes: impressions >= reach always. impressions/reach = frequency. [DISABLED: Column not yet in Athena table]
       glue_processed_at:
         name: glue_processed_at
         type: timestamp
