@@ -39,10 +39,28 @@ class WorkflowNodes:
             Updated state with execution plan
         """
         from utils.profile_defaults import format_profile_for_prompt
+        from utils.semantic_layer import check_data_availability
 
         query = state["query"]
         context = state.get("context", "")
         user_profile = state.get("user_profile")
+
+        # ========== CHECK 1: Out-of-Scope Data Detection ==========
+        # Before planning, check if user is asking for data we don't have
+        data_check = check_data_availability(query)
+
+        if not data_check['available']:
+            # User is asking for unavailable data - return early with helpful message
+            return {
+                "execution_plan": {
+                    "type": "out_of_scope",
+                    "message": data_check['suggestion'],
+                    "missing_platforms": data_check['missing_platforms'],
+                    "available_platforms": data_check['available_platforms']
+                },
+                "next_step": "END",  # Skip rest of workflow
+                "messages": [AIMessage(content=data_check['suggestion'])]
+            }
 
         # Format profile context for injection
         if user_profile:

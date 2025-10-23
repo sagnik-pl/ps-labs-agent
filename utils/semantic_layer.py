@@ -443,6 +443,78 @@ class SemanticLayer:
             'suggestions': suggestions
         }
 
+    def check_data_availability(self, user_query: str) -> Dict[str, Any]:
+        """
+        Check if the user is asking for data from platforms we don't have.
+
+        This prevents the agent from trying to query unavailable data sources
+        and provides helpful alternatives to the user.
+
+        Args:
+            user_query: Natural language query from user
+
+        Returns:
+            Dict with:
+                - available: bool (True if we have the data)
+                - missing_platforms: list (platforms mentioned but not available)
+                - available_platforms: list (platforms we DO have)
+                - suggestion: str (helpful message for user)
+        """
+        query_lower = user_query.lower()
+
+        # Define platform keywords and their variations
+        UNAVAILABLE_PLATFORMS = {
+            'snapchat': ['snapchat', 'snap chat', 'snap'],
+            'tiktok': ['tiktok', 'tik tok'],
+            'pinterest': ['pinterest', 'pin'],
+            'linkedin': ['linkedin', 'linked in'],
+            'twitter': ['twitter', 'x.com', 'tweet'],
+            'youtube': ['youtube', 'yt'],
+            'google_analytics': ['google analytics', 'ga4', 'ga'],
+            'shopify': ['shopify'],
+            'amazon': ['amazon seller', 'amazon ads'],
+        }
+
+        # Get list of available platforms from schemas
+        available_tables = list(self.schemas.keys())
+        AVAILABLE_PLATFORMS = []
+
+        # Detect available platforms from table names
+        if any('instagram' in table for table in available_tables):
+            AVAILABLE_PLATFORMS.append('Instagram')
+        if any('meta' in table or 'facebook' in table for table in available_tables):
+            AVAILABLE_PLATFORMS.append('Meta Ads (Facebook/Instagram Ads)')
+
+        # Check for unavailable platform mentions
+        missing_platforms = []
+        for platform, keywords in UNAVAILABLE_PLATFORMS.items():
+            for keyword in keywords:
+                if keyword in query_lower:
+                    missing_platforms.append(platform.replace('_', ' ').title())
+                    break
+
+        # If we found unavailable platforms, return guidance
+        if missing_platforms:
+            platforms_str = ', '.join(missing_platforms)
+            available_str = '\n- '.join(AVAILABLE_PLATFORMS)
+
+            return {
+                'available': False,
+                'missing_platforms': missing_platforms,
+                'available_platforms': AVAILABLE_PLATFORMS,
+                'suggestion': f"I don't have access to {platforms_str} data yet.\n\n"
+                             f"Currently I can analyze:\n- {available_str}\n\n"
+                             f"Would you like me to analyze one of these instead?"
+            }
+
+        # Data is available (or no specific platform mentioned)
+        return {
+            'available': True,
+            'missing_platforms': [],
+            'available_platforms': AVAILABLE_PLATFORMS,
+            'suggestion': None
+        }
+
 
 # Global singleton instance
 semantic_layer = SemanticLayer()
@@ -468,3 +540,8 @@ def get_schema_info(table_name: str) -> str:
 def match_query_pattern(user_query: str) -> Optional[str]:
     """Match user query to an optimized query pattern."""
     return semantic_layer.match_query_pattern(user_query)
+
+
+def check_data_availability(user_query: str) -> Dict[str, Any]:
+    """Check if user is asking for data we don't have."""
+    return semantic_layer.check_data_availability(user_query)
