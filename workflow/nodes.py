@@ -527,7 +527,12 @@ class WorkflowNodes:
 
     def sql_generator_node(self, state: AgentState) -> Dict[str, Any]:
         """
-        Generate SQL query from natural language.
+        Generate SQL query from natural language with template optimization.
+
+        Strategy:
+        1. Check if query matches a pre-optimized template
+        2. If match found and parameters valid, use template (faster + more reliable)
+        3. Otherwise, generate SQL from scratch using LLM
 
         Takes user query and available table schemas to generate
         a SQL query for Athena. Enhanced with semantic layer for
@@ -541,10 +546,67 @@ class WorkflowNodes:
         """
         from tools.athena_tools import list_tables_tool, table_schema_tool
         from utils.semantic_layer import semantic_layer
+        from utils.sql_templates import suggest_template, get_template_with_validation, get_template_metadata
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         query = state["query"]
         user_id = state["user_id"]
         validation_feedback = state.get("sql_validation_feedback", "")
+
+        # ========== STEP 1: Try Template-Based Generation ==========
+        # Check if query matches a pre-optimized template
+        matched_template = suggest_template(query)
+
+        if matched_template:
+            logger.info(f"Found matching template: {matched_template}")
+
+            # Get template metadata to extract default parameters
+            template_meta = get_template_metadata(matched_template)
+
+            if template_meta:
+                # Prepare parameters (user_id is always required)
+                template_params = {"user_id": user_id}
+
+                # Try to extract time period from query if needed
+                if 'days' in template_meta['parameters']:
+                    # Simple extraction: look for numbers followed by "day(s)" or "week(s)"
+                    import re
+                    days_match = re.search(r'(\d+)\s*(?:day|days)', query.lower())
+                    weeks_match = re.search(r'(\d+)\s*(?:week|weeks)', query.lower())
+
+                    if days_match:
+                        template_params['days'] = int(days_match.group(1))
+                    elif weeks_match:
+                        template_params['days'] = int(weeks_match.group(1)) * 7
+                    # else: will use default from template
+
+                # Try to extract limit from query if needed
+                if 'limit' in template_meta['parameters']:
+                    limit_match = re.search(r'(?:top|first|last)\s*(\d+)', query.lower())
+                    if limit_match:
+                        template_params['limit'] = int(limit_match.group(1))
+
+                # Generate SQL from template
+                template_result = get_template_with_validation(matched_template, **template_params)
+
+                if template_result['success']:
+                    logger.info(f"✅ Using optimized template: {matched_template}")
+
+                    return {
+                        "generated_sql": template_result['sql'],
+                        "table_schemas": f"Using optimized template: {template_meta['display_name']}",
+                        "used_template": matched_template,
+                        "template_params": template_params,
+                        "messages": [AIMessage(content=f"Generated SQL using optimized template: {template_meta['display_name']}")],
+                    }
+                else:
+                    logger.warning(f"Template validation failed: {template_result['error']}")
+                    # Fall through to LLM-based generation
+
+        # ========== STEP 2: LLM-Based SQL Generation ==========
+        # No matching template or template failed - generate from scratch
 
         # Get available tables
         tables_result = list_tables_tool.invoke({"user_id": user_id})
@@ -566,15 +628,17 @@ class WorkflowNodes:
 
         table_schemas = "\n\n".join(table_schemas_list) if table_schemas_list else tables_result
 
-        # Check if query matches a known pattern
-        matched_pattern = semantic_layer.match_query_pattern(query)
+        # Add pattern info hint if we found a template but couldn't use it
         pattern_info = ""
-        if matched_pattern:
-            pattern_def = semantic_layer.get_query_pattern(matched_pattern)
+        if matched_template:
+            pattern_def = semantic_layer.get_query_pattern(matched_template)
             if pattern_def:
-                pattern_info = f"\n\n**Suggested Query Pattern**: {pattern_def.get('name')}\n"
+                pattern_info = f"\n\n**Similar Query Pattern**: {pattern_def.get('name')}\n"
                 pattern_info += f"Description: {pattern_def.get('description')}\n"
-                pattern_info += f"Template available if needed."
+                pattern_info += f"You can reference this pattern's structure for your query.\n"
+                # Include the template as an example
+                if 'template' in pattern_def:
+                    pattern_info += f"\n**Example Template Structure**:\n{pattern_def['template'][:500]}...\n"
 
         # Load SQL generator prompt
         prompt = self.prompt_manager.get_agent_prompt(
@@ -606,7 +670,7 @@ class WorkflowNodes:
 
     def sql_validator_node(self, state: AgentState) -> Dict[str, Any]:
         """
-        Validate generated SQL query.
+        Validate generated SQL query with complexity analysis.
 
         Checks SQL query for:
         - User isolation (user_id filter)
@@ -614,14 +678,22 @@ class WorkflowNodes:
         - Valid SQL syntax
         - Query completeness
         - Safety and efficiency
+        - Complexity scoring and optimization hints
 
         Args:
             state: Current agent state
 
         Returns:
-            Updated state with validation results and retry decision
+            Updated state with validation results, complexity score, and retry decision
         """
         from utils.semantic_layer import semantic_layer
+        from utils.sql_analyzer import (
+            calculate_complexity,
+            check_required_filters,
+            get_optimization_hints,
+            validate_syntax_basic,
+            format_complexity_report
+        )
         import logging
         logger = logging.getLogger(__name__)
 
@@ -631,10 +703,43 @@ class WorkflowNodes:
         table_schemas = state.get("table_schemas", "")
         previous_feedback = state.get("sql_validation_feedback", "")
 
-        # Pre-validate using semantic layer for common errors
+        # ========== STEP 1: Basic Syntax Validation ==========
+        is_valid_syntax, syntax_error = validate_syntax_basic(generated_sql)
+        if not is_valid_syntax:
+            logger.error(f"SQL syntax error: {syntax_error}")
+            return {
+                "sql_validation": {
+                    "is_valid": False,
+                    "validation_score": 0,
+                    "feedback": f"❌ SYNTAX ERROR: {syntax_error}",
+                    "reasoning": "Basic syntax validation failed"
+                },
+                "sql_validation_feedback": f"Fix syntax error: {syntax_error}",
+                "sql_retry_count": state.get("sql_retry_count", 0) + 1,
+                "next_step": "retry_sql"
+            }
+
+        # ========== STEP 2: Complexity Analysis ==========
+        complexity = calculate_complexity(generated_sql)
+        hints = get_optimization_hints(generated_sql, complexity)
+
+        logger.info(f"SQL complexity: {complexity['score']}/10 ({complexity['level']})")
+
+        # ========== STEP 3: Required Filters Check ==========
+        # Determine primary table
+        primary_table = "instagram_media_insights"  # Default
+        if "instagram_media " in generated_sql.lower():
+            primary_table = "instagram_media"
+
+        missing_filters = check_required_filters(generated_sql, primary_table)
+
+        if missing_filters:
+            logger.warning(f"Missing required filters: {missing_filters}")
+
+        # ========== STEP 4: Semantic Layer Validation ==========
         semantic_validation = []
 
-        # Check for 'saves' vs 'saved' error
+        # Check for 'saves' vs 'saved' error and other column issues
         if "instagram" in query.lower():
             # Validate instagram_media_insights columns
             validation_result = semantic_layer.validate_sql_columns(
@@ -658,8 +763,30 @@ class WorkflowNodes:
 
                 semantic_validation.append(error_msg)
 
-        # Add semantic validation to feedback
-        semantic_feedback = "\n".join(semantic_validation) if semantic_validation else ""
+        # ========== STEP 5: Compile Validation Feedback ==========
+        feedback_parts = []
+
+        # Add complexity report
+        complexity_report = format_complexity_report(complexity, hints)
+        feedback_parts.append(f"**Complexity Analysis**:\n{complexity_report}")
+
+        # Add missing filters warning
+        if missing_filters:
+            feedback_parts.append(f"\n⚠️ **Missing Required Filters**:\n" +
+                                 "\n".join(f"  - {f}" for f in missing_filters))
+
+        # Add semantic validation
+        if semantic_validation:
+            feedback_parts.append("\n" + "\n".join(semantic_validation))
+
+        # Add high complexity warning
+        if complexity['score'] >= 7:
+            feedback_parts.append(
+                f"\n⚠️ **High Complexity Warning**: This query has a complexity score of {complexity['score']}/10. "
+                "Consider simplifying or using query templates for better performance."
+            )
+
+        semantic_feedback = "\n\n".join(feedback_parts) if feedback_parts else ""
 
         # Load SQL validator prompt
         prompt = self.prompt_manager.get_agent_prompt(
@@ -720,9 +847,18 @@ class WorkflowNodes:
 
         needs_retry = not is_valid and retry_count < max_retries
 
+        # Add complexity data to validation result
+        validation_with_complexity = {
+            **validation,
+            "complexity_score": complexity['score'],
+            "complexity_level": complexity['level'],
+            "optimization_hints": hints
+        }
+
         return {
-            "sql_validation": validation,
+            "sql_validation": validation_with_complexity,
             "sql_validation_feedback": validation.get("feedback", ""),
+            "sql_complexity": complexity,  # Store full complexity analysis
             "sql_retry_count": retry_count + 1 if needs_retry else retry_count,
             "next_step": "retry_sql" if needs_retry else "execute_sql",
         }
