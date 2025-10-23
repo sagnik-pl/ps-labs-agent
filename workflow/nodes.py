@@ -104,7 +104,7 @@ class WorkflowNodes:
             split_result = split_comparison_query(
                 original_query=query,
                 comparison_data=comparison_check,
-                user_id=state["user_id"]
+                user_id=state.get("user_id")
             )
 
             if split_result['can_split']:
@@ -222,7 +222,7 @@ class WorkflowNodes:
         from agents.data_analytics_agent import DataAnalyticsAgent
 
         query = state["query"]
-        user_id = state["user_id"]
+        user_id = state.get("user_id")
         context = state.get("context", "")
 
         # Initialize and run the agent
@@ -588,7 +588,7 @@ class WorkflowNodes:
         logger = logging.getLogger(__name__)
 
         query = state["query"]
-        user_id = state["user_id"]
+        user_id = state.get("user_id")
         validation_feedback = state.get("sql_validation_feedback", "")
 
         # ========== STEP 1: Try Template-Based Generation ==========
@@ -734,7 +734,7 @@ class WorkflowNodes:
         logger = logging.getLogger(__name__)
 
         query = state["query"]
-        user_id = state["user_id"]
+        user_id = state.get("user_id")
         generated_sql = state.get("generated_sql", "")
         table_schemas = state.get("table_schemas", "")
         previous_feedback = state.get("sql_validation_feedback", "")
@@ -918,7 +918,7 @@ class WorkflowNodes:
         import time
 
         logger = logging.getLogger(__name__)
-        user_id = state["user_id"]
+        user_id = state.get("user_id")
         generated_sql = state.get("generated_sql", "")
 
         # Retry configuration
