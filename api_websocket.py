@@ -303,15 +303,14 @@ async def process_query_with_progress(
             logger.error(f"Error during workflow streaming: {stream_error}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            raise
+            # Don't raise - handle error response below
+            result = {"final_response": f"I encountered an error processing your request: {str(stream_error)}", "metadata": {"error": True}}
 
         # Send final result
         final_response = result.get("final_response", "No response generated")
         metadata = result.get("metadata", {})
 
-        await manager.send_completed(session_id, final_response, metadata)
-
-        # Save response to Firestore
+        # Save response to Firestore (both success and error cases)
         try:
             firebase_client.save_message(
                 user_id,
@@ -323,9 +322,34 @@ async def process_query_with_progress(
         except Exception as e:
             logger.warning(f"Could not save response to Firestore: {e}")
 
+        # Send final result to user
+        if metadata.get("error", False):
+            import traceback
+            await manager.send_error(
+                session_id,
+                final_response,
+                traceback.format_exc()
+            )
+        else:
+            await manager.send_completed(session_id, final_response, metadata)
+
     except Exception as e:
         logger.error(f"Error processing query: {e}")
         import traceback
+        error_msg = f"I encountered an error: {str(e)}"
+
+        # Try to save error message to Firestore
+        try:
+            firebase_client.save_message(
+                user_id,
+                conversation_id,
+                "assistant",
+                error_msg,
+                metadata={"error": True}
+            )
+        except Exception as save_error:
+            logger.warning(f"Could not save error message to Firestore: {save_error}")
+
         await manager.send_error(
             session_id,
             str(e),
