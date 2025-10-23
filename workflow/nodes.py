@@ -1058,8 +1058,23 @@ class WorkflowNodes:
         import logging
 
         logger = logging.getLogger(__name__)
-        user_id = state["user_id"]
+        user_id = state.get("user_id")
         execution_plan = state.get("execution_plan", {})
+
+        if not user_id:
+            logger.error("No user_id in state for parallel comparison")
+            return {
+                "user_id": "",
+                "query": state.get("query", ""),
+                "agent_results": {
+                    "agent": "parallel_comparison",
+                    "result": "Error: No user_id provided",
+                    "status": "error"
+                },
+                "raw_data": "Error: No user_id provided",
+                "execution_status": "error",
+                "messages": [AIMessage(content="Error: No user_id provided")]
+            }
 
         # Extract sub-queries from execution plan
         sub_queries_data = execution_plan.get("sub_queries", [])

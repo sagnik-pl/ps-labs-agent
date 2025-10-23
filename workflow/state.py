@@ -26,6 +26,7 @@ class AgentState(TypedDict):
 
     # Planning & Routing
     plan: Optional[Dict[str, Any]]  # Execution plan
+    execution_plan: Optional[Dict[str, Any]]  # Detailed execution plan (for comparisons, etc.)
     routing_decision: Optional[Dict[str, Any]]  # Which agent(s) to use
     next_step: Optional[str]  # Next node to execute
 
