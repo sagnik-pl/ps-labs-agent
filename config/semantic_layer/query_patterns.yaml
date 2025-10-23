@@ -1,332 +1,876 @@
-# E-commerce Semantic Layer - Query Pattern Library
-# Pre-built, optimized query templates for common analytics questions
-
-version: "1.0"
-last_updated: "2025-10-22"
-
+version: '1.0'
+last_updated: '2025-10-22'
 patterns:
   top_performing_content:
-    name: "Top Performing Content by Engagement"
-    category: "social_media"
-    description: "Find posts with highest engagement rate in a time period"
+    name: Top Performing Content by Engagement
+    category: social_media
+    description: Find posts with highest engagement rate in a time period
     use_cases:
-      - "What content performed best?"
-      - "Show top posts by engagement"
-      - "Which posts got most engagement?"
-      - "Best performing content"
+    - What content performed best?
+    - Show top posts by engagement
+    - Which posts got most engagement?
+    - Best performing content
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 30
       limit:
         required: false
-        type: "int"
+        type: int
         default: 10
-    template: |
-      SELECT
-        m.media_type,
-        m.caption,
-        m.timestamp,
-        i.reach,
-        i.likes,
-        i.comments,
-        i.saved,
-        i.shares,
-        (i.likes + i.comments + i.saved + i.shares) AS total_engagement,
-        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 AS engagement_rate
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-      ORDER BY engagement_rate DESC
-      LIMIT {limit}
+    template: "SELECT\n  m.media_type,\n  m.caption,\n  m.timestamp,\n  i.reach,\n  i.likes,\n  i.comments,\n  i.saved,\n\
+      \  i.shares,\n  (i.likes + i.comments + i.saved + i.shares) AS total_engagement,\n  ((i.likes + i.comments + i.saved\
+      \ + i.shares) / NULLIF(i.reach, 0)) * 100 AS engagement_rate\nFROM instagram_media m\nJOIN instagram_media_insights\
+      \ i\n  ON m.id = i.id AND m.user_id = i.user_id\nWHERE m.user_id = '{user_id}'\n  AND m.timestamp >= date_add('day',\
+      \ -{days}, current_date)\nORDER BY engagement_rate DESC\nLIMIT {limit}\n"
     metrics_calculated:
-      - "engagement_rate"
-      - "total_engagement"
-
+    - engagement_rate
+    - total_engagement
   content_performance_by_type:
-    name: "Content Performance by Media Type"
-    category: "social_media"
-    description: "Compare performance across different content types (Reels, Images, Carousels)"
+    name: Content Performance by Media Type
+    category: social_media
+    description: Compare performance across different content types (Reels, Images, Carousels)
     use_cases:
-      - "Compare Reels vs Posts"
-      - "What media type performs best?"
-      - "Reels vs carousel performance"
-      - "Content type analysis"
+    - Compare Reels vs Posts
+    - What media type performs best?
+    - Reels vs carousel performance
+    - Content type analysis
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 30
-    template: |
-      SELECT
-        m.media_type,
-        COUNT(*) as post_count,
-        AVG(i.reach) as avg_reach,
-        AVG(i.likes) as avg_likes,
-        AVG(i.comments) as avg_comments,
-        AVG(i.saved) as avg_saved,
-        AVG(i.shares) as avg_shares,
-        AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-      GROUP BY m.media_type
-      ORDER BY avg_engagement_rate DESC
+    template: "SELECT\n  m.media_type,\n  COUNT(*) as post_count,\n  AVG(i.reach) as avg_reach,\n  AVG(i.likes) as avg_likes,\n\
+      \  AVG(i.comments) as avg_comments,\n  AVG(i.saved) as avg_saved,\n  AVG(i.shares) as avg_shares,\n  AVG((i.likes +\
+      \ i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate\nFROM instagram_media m\nJOIN\
+      \ instagram_media_insights i\n  ON m.id = i.id AND m.user_id = i.user_id\nWHERE m.user_id = '{user_id}'\n  AND m.timestamp\
+      \ >= date_add('day', -{days}, current_date)\nGROUP BY m.media_type\nORDER BY avg_engagement_rate DESC\n"
     metrics_calculated:
-      - "engagement_rate"
-
+    - engagement_rate
   recent_posts_with_metrics:
-    name: "Recent Posts with Full Metrics"
-    category: "social_media"
-    description: "Get recent posts with all performance metrics"
+    name: Recent Posts with Full Metrics
+    category: social_media
+    description: Get recent posts with all performance metrics
     use_cases:
-      - "Show recent posts"
-      - "Latest content performance"
-      - "Recent post metrics"
+    - Show recent posts
+    - Latest content performance
+    - Recent post metrics
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 7
       limit:
         required: false
-        type: "int"
+        type: int
         default: 20
-    template: |
-      SELECT
-        m.timestamp,
-        m.media_type,
-        m.caption,
-        i.reach,
-        i.impressions,
-        i.likes,
-        i.comments,
-        i.saved,
-        i.shares,
-        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate,
-        CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0) as frequency
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-      ORDER BY m.timestamp DESC
-      LIMIT {limit}
+    template: "SELECT\n  m.timestamp,\n  m.media_type,\n  m.caption,\n  i.reach,\n  i.impressions,\n  i.likes,\n  i.comments,\n\
+      \  i.saved,\n  i.shares,\n  ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate,\n\
+      \  CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0) as frequency\nFROM instagram_media m\nJOIN instagram_media_insights\
+      \ i\n  ON m.id = i.id AND m.user_id = i.user_id\nWHERE m.user_id = '{user_id}'\n  AND m.timestamp >= date_add('day',\
+      \ -{days}, current_date)\nORDER BY m.timestamp DESC\nLIMIT {limit}\n"
     metrics_calculated:
-      - "engagement_rate"
-      - "frequency"
-
+    - engagement_rate
+    - frequency
   high_save_rate_content:
-    name: "High Save Rate Content"
-    category: "social_media"
-    description: "Find content with highest save rates (valuable/educational content)"
+    name: High Save Rate Content
+    category: social_media
+    description: Find content with highest save rates (valuable/educational content)
     use_cases:
-      - "Most saved posts"
-      - "Valuable content"
-      - "Educational posts"
-      - "Content worth saving"
+    - Most saved posts
+    - Valuable content
+    - Educational posts
+    - Content worth saving
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 30
       min_reach:
         required: false
-        type: "int"
+        type: int
         default: 100
-        description: "Minimum reach to avoid statistical noise"
+        description: Minimum reach to avoid statistical noise
       limit:
         required: false
-        type: "int"
+        type: int
         default: 10
-    template: |
-      SELECT
-        m.media_type,
-        m.caption,
-        m.timestamp,
-        i.reach,
-        i.saved,
-        (CAST(i.saved AS DOUBLE) / NULLIF(i.reach, 0)) * 100 as save_rate,
-        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-        AND i.reach >= {min_reach}
-      ORDER BY save_rate DESC
-      LIMIT {limit}
+    template: "SELECT\n  m.media_type,\n  m.caption,\n  m.timestamp,\n  i.reach,\n  i.saved,\n  (CAST(i.saved AS DOUBLE) /\
+      \ NULLIF(i.reach, 0)) * 100 as save_rate,\n  ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100\
+      \ as engagement_rate\nFROM instagram_media m\nJOIN instagram_media_insights i\n  ON m.id = i.id AND m.user_id = i.user_id\n\
+      WHERE m.user_id = '{user_id}'\n  AND m.timestamp >= date_add('day', -{days}, current_date)\n  AND i.reach >= {min_reach}\n\
+      ORDER BY save_rate DESC\nLIMIT {limit}\n"
     metrics_calculated:
-      - "save_rate"
-      - "engagement_rate"
-
+    - save_rate
+    - engagement_rate
   posting_frequency_analysis:
-    name: "Posting Frequency Over Time"
-    category: "social_media"
-    description: "Analyze posting patterns and frequency trends"
+    name: Posting Frequency Over Time
+    category: social_media
+    description: Analyze posting patterns and frequency trends
     use_cases:
-      - "How often do I post?"
-      - "Posting frequency analysis"
-      - "Content calendar analysis"
+    - How often do I post?
+    - Posting frequency analysis
+    - Content calendar analysis
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 90
-    template: |
-      SELECT
-        DATE_TRUNC('day', m.timestamp) as date,
-        COUNT(*) as posts_per_day,
-        AVG(i.reach) as avg_reach,
-        AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-      GROUP BY DATE_TRUNC('day', m.timestamp)
-      ORDER BY date DESC
+    template: "SELECT\n  DATE_TRUNC('day', m.timestamp) as date,\n  COUNT(*) as posts_per_day,\n  AVG(i.reach) as avg_reach,\n\
+      \  AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate\nFROM instagram_media\
+      \ m\nJOIN instagram_media_insights i\n  ON m.id = i.id AND m.user_id = i.user_id\nWHERE m.user_id = '{user_id}'\n  AND\
+      \ m.timestamp >= date_add('day', -{days}, current_date)\nGROUP BY DATE_TRUNC('day', m.timestamp)\nORDER BY date DESC\n"
     metrics_calculated:
-      - "engagement_rate"
-
+    - engagement_rate
   viral_content_potential:
-    name: "Viral/High-Performing Content"
-    category: "social_media"
-    description: "Find content that significantly outperformed average"
+    name: Viral/High-Performing Content
+    category: social_media
+    description: Find content that significantly outperformed average
     use_cases:
-      - "Viral posts"
-      - "Best ever content"
-      - "Outlier performance"
-      - "Breakout posts"
+    - Viral posts
+    - Best ever content
+    - Outlier performance
+    - Breakout posts
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 90
       multiplier:
         required: false
-        type: "float"
+        type: float
         default: 2.0
-        description: "How many times above average to consider viral"
-    template: |
-      WITH avg_metrics AS (
-        SELECT
-          AVG(i.reach) as avg_reach,
-          AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate
-        FROM instagram_media m
-        JOIN instagram_media_insights i
-          ON m.id = i.id AND m.user_id = i.user_id
-        WHERE m.user_id = '{user_id}'
-          AND m.timestamp >= date_add('day', -{days}, current_date)
-      )
-      SELECT
-        m.media_type,
-        m.caption,
-        m.timestamp,
-        i.reach,
-        ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate,
-        i.reach / NULLIF(a.avg_reach, 0) as reach_vs_avg,
-        (((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100) / NULLIF(a.avg_engagement_rate, 0) as engagement_vs_avg
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      CROSS JOIN avg_metrics a
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-        AND (i.reach >= a.avg_reach * {multiplier}
-         OR ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) >= a.avg_engagement_rate * {multiplier})
-      ORDER BY reach_vs_avg DESC, engagement_vs_avg DESC
+        description: How many times above average to consider viral
+    template: "WITH avg_metrics AS (\n  SELECT\n    AVG(i.reach) as avg_reach,\n    AVG((i.likes + i.comments + i.saved +\
+      \ i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate\n  FROM instagram_media m\n  JOIN instagram_media_insights\
+      \ i\n    ON m.id = i.id AND m.user_id = i.user_id\n  WHERE m.user_id = '{user_id}'\n    AND m.timestamp >= date_add('day',\
+      \ -{days}, current_date)\n)\nSELECT\n  m.media_type,\n  m.caption,\n  m.timestamp,\n  i.reach,\n  ((i.likes + i.comments\
+      \ + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100 as engagement_rate,\n  i.reach / NULLIF(a.avg_reach, 0) as reach_vs_avg,\n\
+      \  (((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0)) * 100) / NULLIF(a.avg_engagement_rate, 0) as\
+      \ engagement_vs_avg\nFROM instagram_media m\nJOIN instagram_media_insights i\n  ON m.id = i.id AND m.user_id = i.user_id\n\
+      CROSS JOIN avg_metrics a\nWHERE m.user_id = '{user_id}'\n  AND m.timestamp >= date_add('day', -{days}, current_date)\n\
+      \  AND (i.reach >= a.avg_reach * {multiplier}\n   OR ((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach,\
+      \ 0) * 100) >= a.avg_engagement_rate * {multiplier})\nORDER BY reach_vs_avg DESC, engagement_vs_avg DESC\n"
     metrics_calculated:
-      - "engagement_rate"
-      - "reach_vs_avg"
-      - "engagement_vs_avg"
-
+    - engagement_rate
+    - reach_vs_avg
+    - engagement_vs_avg
   time_series_performance:
-    name: "Time Series Performance Trends"
-    category: "social_media"
-    description: "Weekly or monthly aggregated performance metrics"
+    name: Time Series Performance Trends
+    category: social_media
+    description: Weekly or monthly aggregated performance metrics
     use_cases:
-      - "Weekly performance trends"
-      - "Monthly analytics"
-      - "Performance over time"
-      - "Growth trends"
+    - Weekly performance trends
+    - Monthly analytics
+    - Performance over time
+    - Growth trends
     parameters:
       user_id:
         required: true
-        type: "string"
+        type: string
       days:
         required: false
-        type: "int"
+        type: int
         default: 90
       granularity:
         required: false
-        type: "string"
-        default: "week"
-        enum: ["day", "week", "month"]
-    template: |
-      SELECT
-        DATE_TRUNC('{granularity}', m.timestamp) as period,
-        COUNT(*) as total_posts,
-        AVG(i.reach) as avg_reach,
-        AVG(i.impressions) as avg_impressions,
-        AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach, 0) * 100) as avg_engagement_rate,
-        AVG(CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0)) as avg_frequency,
-        SUM(i.reach) as total_reach,
-        SUM(i.likes + i.comments + i.saved + i.shares) as total_engagement
-      FROM instagram_media m
-      JOIN instagram_media_insights i
-        ON m.id = i.id AND m.user_id = i.user_id
-      WHERE m.user_id = '{user_id}'
-        AND m.timestamp >= date_add('day', -{days}, current_date)
-      GROUP BY DATE_TRUNC('{granularity}', m.timestamp)
-      ORDER BY period DESC
+        type: string
+        default: week
+        enum:
+        - day
+        - week
+        - month
+    template: "SELECT\n  DATE_TRUNC('{granularity}', m.timestamp) as period,\n  COUNT(*) as total_posts,\n  AVG(i.reach) as\
+      \ avg_reach,\n  AVG(i.impressions) as avg_impressions,\n  AVG((i.likes + i.comments + i.saved + i.shares) / NULLIF(i.reach,\
+      \ 0) * 100) as avg_engagement_rate,\n  AVG(CAST(i.impressions AS DOUBLE) / NULLIF(i.reach, 0)) as avg_frequency,\n \
+      \ SUM(i.reach) as total_reach,\n  SUM(i.likes + i.comments + i.saved + i.shares) as total_engagement\nFROM instagram_media\
+      \ m\nJOIN instagram_media_insights i\n  ON m.id = i.id AND m.user_id = i.user_id\nWHERE m.user_id = '{user_id}'\n  AND\
+      \ m.timestamp >= date_add('day', -{days}, current_date)\nGROUP BY DATE_TRUNC('{granularity}', m.timestamp)\nORDER BY\
+      \ period DESC\n"
     metrics_calculated:
-      - "engagement_rate"
-      - "frequency"
-
+    - engagement_rate
+    - frequency
+  instagram_latest_profile:
+    name: Latest Instagram Profile Information
+    category: social_media
+    description: Retrieve the most recent Instagram profile data including followers, media count, and bio
+    use_cases:
+    - Show me my current Instagram profile
+    - What's my latest follower count?
+    - Get my Instagram account info
+    - Show current Instagram stats
+    parameters:
+      user_id:
+        required: true
+        type: string
+    template: "SELECT\n  username,\n  name,\n  followers_count,\n  follows_count,\n  media_count,\n  website,\n  biography,\n\
+      \  CONCAT(year, '-', month, '-', day) as snapshot_date\nFROM ps_labs_prod_processed_catalog.instagram_users\nWHERE user_id\
+      \ = '{user_id}'\n  AND year = CAST(year(current_date) AS varchar)\n  AND month = CAST(month(current_date) AS varchar)\n\
+      ORDER BY year DESC, month DESC, day DESC\nLIMIT 1\n"
+    metrics_calculated:
+    - current_followers_count
+    - current_media_count
+    - current_follows_count
+  instagram_follower_growth:
+    name: Instagram Follower Growth Tracking
+    category: social_media
+    description: Track follower count changes over time to identify growth trends
+    use_cases:
+    - Show my follower growth this month
+    - How many followers did I gain?
+    - Track Instagram follower changes
+    - Show follower growth trend
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  CONCAT(year, '-', month, '-', day) as date,\n  followers_count,\n  media_count,\n  follows_count,\n\
+      \  followers_count - LAG(followers_count) OVER (ORDER BY year, month, day) as follower_change\nFROM ps_labs_prod_processed_catalog.instagram_users\n\
+      WHERE user_id = '{user_id}'\n  AND CAST(CONCAT(year, '-', month, '-', day) AS date) >= date_add('day', -{days}, current_date)\n\
+      ORDER BY year, month, day\n"
+    metrics_calculated:
+    - follower_growth_daily
+    - follower_growth_total
+    - media_count_trend
+  instagram_daily_reach_metrics:
+    name: Instagram Daily Reach and Engagement Metrics
+    category: social_media
+    description: Analyze daily reach, weekly reach, and monthly reach trends
+    use_cases:
+    - Show my Instagram reach for the last 30 days
+    - What's my daily reach trend?
+    - How many people am I reaching?
+    - Show reach and follower metrics
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  date,\n  reach as daily_reach,\n  reach_week as weekly_reach,\n  reach_days_28 as monthly_reach,\n\
+      \  follower_count,\n  follower_count - LAG(follower_count) OVER (ORDER BY date) as net_followers\nFROM ps_labs_prod_processed_catalog.instagram_user_insights\n\
+      WHERE user_id = '{user_id}'\n  AND CAST(date AS timestamp) >= date_add('day', -{days}, current_date)\nORDER BY date\
+      \ DESC\n"
+    metrics_calculated:
+    - daily_reach
+    - weekly_reach
+    - monthly_reach
+    - follower_growth
+  instagram_follower_growth_rate:
+    name: Instagram Follower Growth Rate Analysis
+    category: social_media
+    description: Calculate follower growth rates and identify growth acceleration
+    use_cases:
+    - Calculate my follower growth rate
+    - What's my average daily follower gain?
+    - Show follower growth percentage
+    - Am I growing faster this month?
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  date,\n  follower_count,\n  follower_count - LAG(follower_count) OVER (ORDER BY date) as daily_change,\n\
+      \  CASE\n    WHEN LAG(follower_count) OVER (ORDER BY date) > 0\n    THEN ((CAST(follower_count AS double) - LAG(follower_count)\
+      \ OVER (ORDER BY date)) / LAG(follower_count) OVER (ORDER BY date)) * 100\n    ELSE 0\n  END as growth_rate_pct,\n \
+      \ reach,\n  reach_week\nFROM ps_labs_prod_processed_catalog.instagram_user_insights\nWHERE user_id = '{user_id}'\n \
+      \ AND CAST(date AS timestamp) >= date_add('day', -{days}, current_date)\nORDER BY date\n"
+    metrics_calculated:
+    - daily_follower_change
+    - follower_growth_rate_percentage
+    - reach_correlation
+  instagram_reach_to_follower_ratio:
+    name: Instagram Reach vs Follower Ratio
+    category: social_media
+    description: Analyze what percentage of followers you're reaching
+    use_cases:
+    - What percentage of my followers am I reaching?
+    - Show reach to follower ratio
+    - Am I reaching my audience effectively?
+    - Calculate audience penetration rate
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  date,\n  reach as daily_reach,\n  follower_count,\n  CASE\n    WHEN follower_count > 0\n    THEN\
+      \ (CAST(reach AS double) / follower_count) * 100\n    ELSE 0\n  END as reach_to_follower_pct,\n  reach_week,\n  reach_days_28\n\
+      FROM ps_labs_prod_processed_catalog.instagram_user_insights\nWHERE user_id = '{user_id}'\n  AND CAST(date AS timestamp)\
+      \ >= date_add('day', -{days}, current_date)\nORDER BY date DESC\nLIMIT {days}\n"
+    metrics_calculated:
+    - reach_penetration_rate
+    - audience_engagement_rate
+  facebook_ads_performance_by_dma:
+    name: Facebook Ads Performance by Geographic Market
+    category: advertising
+    description: Analyze ad performance across different DMA regions to identify best performing markets
+    use_cases:
+    - Which cities are my ads performing best in?
+    - Show ad performance by region
+    - What's my ROAS by geographic market?
+    - Top performing DMAs
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      min_spend:
+        required: false
+        type: double
+        default: 10.0
+      limit:
+        required: false
+        type: int
+        default: 20
+    template: "SELECT\n  dma,\n  COUNT(DISTINCT ad_id) as num_ads,\n  SUM(spend) as total_spend,\n  SUM(impressions) as total_impressions,\n\
+      \  SUM(clicks) as total_clicks,\n  SUM(inline_link_clicks) as total_link_clicks,\n  SUM(reach) as total_reach,\n  AVG(cpc)\
+      \ as avg_cpc,\n  AVG(cpm) as avg_cpm,\n  AVG(ctr) as avg_ctr,\n  SUM(spend) / NULLIF(SUM(inline_link_clicks), 0) as\
+      \ cost_per_link_click,\n  SUM(inline_link_clicks) * 100.0 / NULLIF(SUM(impressions), 0) as link_ctr\nFROM ps_labs_prod_processed_catalog.facebook_ads_insights_demographics_dma_region\n\
+      WHERE user_id = '{user_id}'\n  AND date_start >= date_add('day', -{days}, current_date)\nGROUP BY dma\nHAVING SUM(spend)\
+      \ >= {min_spend}\nORDER BY total_spend DESC\nLIMIT {limit}\n"
+    metrics_calculated:
+    - total_spend_by_dma
+    - cost_per_link_click
+    - link_click_through_rate
+    - geographic_performance
+  facebook_campaign_performance_summary:
+    name: Facebook Campaign Performance Overview
+    category: advertising
+    description: High-level campaign performance metrics aggregated across all ads and ad sets
+    use_cases:
+    - Show my campaign performance
+    - Which campaigns are spending the most?
+    - Campaign ROI analysis
+    - Best performing campaigns
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      limit:
+        required: false
+        type: int
+        default: 10
+    template: "SELECT\n  campaign_name,\n  objective,\n  COUNT(DISTINCT ad_id) as num_ads,\n  COUNT(DISTINCT adset_id) as\
+      \ num_adsets,\n  SUM(spend) as total_spend,\n  SUM(impressions) as total_impressions,\n  SUM(reach) as total_reach,\n\
+      \  SUM(clicks) as total_clicks,\n  SUM(inline_link_clicks) as total_link_clicks,\n  AVG(frequency) as avg_frequency,\n\
+      \  SUM(spend) / NULLIF(SUM(clicks), 0) as avg_cpc,\n  SUM(spend) / NULLIF(SUM(impressions), 0) * 1000 as avg_cpm,\n\
+      \  SUM(clicks) * 100.0 / NULLIF(SUM(impressions), 0) as avg_ctr,\n  SUM(spend) / NULLIF(SUM(inline_link_clicks), 0)\
+      \ as cost_per_link_click\nFROM ps_labs_prod_processed_catalog.facebook_ads_insights_demographics_dma_region\nWHERE user_id\
+      \ = '{user_id}'\n  AND date_start >= date_add('day', -{days}, current_date)\nGROUP BY campaign_name, objective\nHAVING\
+      \ SUM(spend) > 0\nORDER BY total_spend DESC\nLIMIT {limit}\n"
+    metrics_calculated:
+    - campaign_spend
+    - campaign_reach
+    - campaign_cpc
+    - campaign_ctr
+    - cost_efficiency
+  facebook_ad_quality_analysis:
+    name: Facebook Ad Quality Score Analysis
+    category: advertising
+    description: Analyze ad quality, engagement, and conversion rankings to identify optimization opportunities
+    use_cases:
+    - Which ads have low quality scores?
+    - Show me ads that need improvement
+    - Ad quality ranking analysis
+    - Find underperforming ads
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      min_spend:
+        required: false
+        type: double
+        default: 10.0
+    template: "SELECT\n  ad_name,\n  campaign_name,\n  quality_ranking,\n  engagement_rate_ranking,\n  conversion_rate_ranking,\n\
+      \  SUM(spend) as total_spend,\n  SUM(impressions) as total_impressions,\n  SUM(clicks) as total_clicks,\n  AVG(ctr)\
+      \ as avg_ctr,\n  AVG(frequency) as avg_frequency\nFROM ps_labs_prod_processed_catalog.facebook_ads_insights_demographics_dma_region\n\
+      WHERE user_id = '{user_id}'\n  AND date_start >= date_add('day', -{days}, current_date)\n  AND quality_ranking IS NOT\
+      \ NULL\nGROUP BY ad_name, campaign_name, quality_ranking, engagement_rate_ranking, conversion_rate_ranking\nHAVING SUM(spend)\
+      \ >= {min_spend}\nORDER BY\n  CASE quality_ranking\n    WHEN 'BELOW_AVERAGE' THEN 3\n    WHEN 'AVERAGE' THEN 2\n   \
+      \ WHEN 'ABOVE_AVERAGE' THEN 1\n    ELSE 4\n  END DESC,\n  total_spend DESC\nLIMIT 20\n"
+    metrics_calculated:
+    - quality_score_distribution
+    - ads_needing_optimization
+  facebook_daily_ad_spend_trend:
+    name: Facebook Daily Ad Spend Trend
+    category: advertising
+    description: Track daily ad spend and performance metrics over time
+    use_cases:
+    - Show daily ad spend
+    - Ad spend trend analysis
+    - How much am I spending per day?
+    - Daily advertising budget tracking
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  date_start as date,\n  COUNT(DISTINCT campaign_id) as active_campaigns,\n  COUNT(DISTINCT ad_id)\
+      \ as active_ads,\n  SUM(spend) as daily_spend,\n  SUM(impressions) as daily_impressions,\n  SUM(clicks) as daily_clicks,\n\
+      \  SUM(inline_link_clicks) as daily_link_clicks,\n  SUM(reach) as daily_reach,\n  AVG(frequency) as avg_frequency\n\
+      FROM ps_labs_prod_processed_catalog.facebook_ads_insights_demographics_dma_region\nWHERE user_id = '{user_id}'\n  AND\
+      \ date_start >= date_add('day', -{days}, current_date)\nGROUP BY date_start\nORDER BY date_start DESC\n"
+    metrics_calculated:
+    - daily_ad_spend
+    - daily_reach
+    - daily_frequency
+    - spend_trend
+  ga_top_selling_products:
+    name: Top Selling Products by Revenue
+    category: analytics
+    description: Identify best-selling products based on revenue and purchase volume
+    use_cases:
+    - What are my best-selling products?
+    - Top products by revenue
+    - Show bestsellers
+    - Which products generate the most revenue?
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      limit:
+        required: false
+        type: int
+        default: 20
+    template: "SELECT\n  itemname,\n  SUM(itemrevenue) as total_revenue,\n  SUM(itemspurchased) as total_purchases,\n  SUM(itemsviewed)\
+      \ as total_views,\n  SUM(itemsaddedtocart) as total_add_to_carts,\n  SUM(itemrevenue) / NULLIF(SUM(itemspurchased),\
+      \ 0) as revenue_per_purchase,\n  AVG(purchasetoviewrate) as avg_conversion_rate,\n  AVG(carttoviewrate) as avg_add_to_cart_rate\n\
+      FROM ps_labs_prod_processed_catalog.google_analytics_ecommerce_purchases_item_name_report\nWHERE user_id = '{user_id}'\n\
+      \  AND CAST(date AS integer) >= CAST(format_datetime(date_add('day', -{days}, current_date), 'yyyyMMdd') AS integer)\n\
+      GROUP BY itemname\nHAVING SUM(itemrevenue) > 0\nORDER BY total_revenue DESC\nLIMIT {limit}\n"
+    metrics_calculated:
+    - total_revenue
+    - revenue_per_purchase
+    - conversion_rate
+    - bestseller_ranking
+  ga_product_conversion_funnel:
+    name: Product Conversion Funnel Analysis
+    category: analytics
+    description: Analyze conversion funnel from product views to purchases, identifying drop-off points
+    use_cases:
+    - Show conversion funnel for products
+    - Where are customers dropping off?
+    - Product funnel analysis
+    - View to purchase conversion rate
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      min_views:
+        required: false
+        type: int
+        default: 10
+      limit:
+        required: false
+        type: int
+        default: 50
+    template: "SELECT\n  itemname,\n  SUM(itemsviewed) as total_views,\n  SUM(itemsaddedtocart) as total_add_to_carts,\n \
+      \ SUM(itemspurchased) as total_purchases,\n  SUM(itemrevenue) as total_revenue,\n  -- View to Cart conversion\n  SUM(itemsaddedtocart)\
+      \ * 100.0 / NULLIF(SUM(itemsviewed), 0) as view_to_cart_rate,\n  -- Cart to Purchase conversion\n  CASE\n    WHEN SUM(itemsaddedtocart)\
+      \ > 0\n    THEN SUM(itemspurchased) * 100.0 / SUM(itemsaddedtocart)\n    ELSE 0\n  END as cart_to_purchase_rate,\n \
+      \ -- Overall conversion\n  SUM(itemspurchased) * 100.0 / NULLIF(SUM(itemsviewed), 0) as view_to_purchase_rate,\n  --\
+      \ Revenue metrics\n  SUM(itemrevenue) / NULLIF(SUM(itemspurchased), 0) as avg_order_value,\n  SUM(itemrevenue) / NULLIF(SUM(itemsviewed),\
+      \ 0) as revenue_per_view\nFROM ps_labs_prod_processed_catalog.google_analytics_ecommerce_purchases_item_name_report\n\
+      WHERE user_id = '{user_id}'\n  AND CAST(date AS integer) >= CAST(format_datetime(date_add('day', -{days}, current_date),\
+      \ 'yyyyMMdd') AS integer)\nGROUP BY itemname\nHAVING SUM(itemsviewed) >= {min_views}\nORDER BY total_revenue DESC\n\
+      LIMIT {limit}\n"
+    metrics_calculated:
+    - view_to_cart_conversion
+    - cart_to_purchase_conversion
+    - overall_conversion_rate
+    - funnel_drop_off_points
+    - average_order_value
+  ga_underperforming_products:
+    name: Underperforming Products with High Views
+    category: analytics
+    description: Identify products getting views but not converting to purchases
+    use_cases:
+    - Which products have low conversion rates?
+    - Products with views but no sales
+    - Find underperforming items
+    - Products that need optimization
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      min_views:
+        required: false
+        type: int
+        default: 20
+      max_conversion_rate:
+        required: false
+        type: double
+        default: 5.0
+      limit:
+        required: false
+        type: int
+        default: 20
+    template: "SELECT\n  itemname,\n  SUM(itemsviewed) as total_views,\n  SUM(itemsaddedtocart) as total_add_to_carts,\n \
+      \ SUM(itemspurchased) as total_purchases,\n  AVG(carttoviewrate) * 100 as avg_add_to_cart_rate,\n  AVG(purchasetoviewrate)\
+      \ * 100 as avg_conversion_rate,\n  SUM(itemrevenue) as total_revenue\nFROM ps_labs_prod_processed_catalog.google_analytics_ecommerce_purchases_item_name_report\n\
+      WHERE user_id = '{user_id}'\n  AND CAST(date AS integer) >= CAST(format_datetime(date_add('day', -{days}, current_date),\
+      \ 'yyyyMMdd') AS integer)\nGROUP BY itemname\nHAVING SUM(itemsviewed) >= {min_views}\n  AND AVG(purchasetoviewrate)\
+      \ * 100 < {max_conversion_rate}\nORDER BY total_views DESC\nLIMIT {limit}\n"
+    metrics_calculated:
+    - low_conversion_products
+    - optimization_opportunities
+  ga_daily_ecommerce_trend:
+    name: Daily E-commerce Performance Trend
+    category: analytics
+    description: Track daily e-commerce metrics including revenue, views, and conversions
+    use_cases:
+    - Show daily sales trend
+    - Daily revenue analysis
+    - E-commerce performance over time
+    - Track daily conversion rates
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  startdate as date,\n  COUNT(DISTINCT itemname) as unique_items,\n  SUM(itemrevenue) as daily_revenue,\n\
+      \  SUM(itemsviewed) as daily_views,\n  SUM(itemsaddedtocart) as daily_add_to_carts,\n  SUM(itemspurchased) as daily_purchases,\n\
+      \  SUM(itemrevenue) / NULLIF(SUM(itemspurchased), 0) as avg_order_value,\n  SUM(itemspurchased) * 100.0 / NULLIF(SUM(itemsviewed),\
+      \ 0) as daily_conversion_rate,\n  SUM(itemsaddedtocart) * 100.0 / NULLIF(SUM(itemsviewed), 0) as daily_add_to_cart_rate\n\
+      FROM ps_labs_prod_processed_catalog.google_analytics_ecommerce_purchases_item_name_report\nWHERE user_id = '{user_id}'\n\
+      \  AND CAST(date AS integer) >= CAST(format_datetime(date_add('day', -{days}, current_date), 'yyyyMMdd') AS integer)\n\
+      GROUP BY startdate\nORDER BY startdate DESC\n"
+    metrics_calculated:
+    - daily_revenue
+    - daily_conversion_rate
+    - daily_aov
+    - revenue_trend
+  ga_product_performance_comparison:
+    name: Product Performance Comparison
+    category: analytics
+    description: Compare performance metrics across products to identify winners and losers
+    use_cases:
+    - Compare product performance
+    - Which products convert better?
+    - Product performance benchmarking
+    - Winners vs losers analysis
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      min_views:
+        required: false
+        type: int
+        default: 10
+    template: "WITH product_stats AS (\n  SELECT\n    itemname,\n    SUM(itemsviewed) as views,\n    SUM(itemsaddedtocart)\
+      \ as carts,\n    SUM(itemspurchased) as purchases,\n    SUM(itemrevenue) as revenue,\n    AVG(purchasetoviewrate) *\
+      \ 100 as conversion_rate\n  FROM ps_labs_prod_processed_catalog.google_analytics_ecommerce_purchases_item_name_report\n\
+      \  WHERE user_id = '{user_id}'\n    AND CAST(date AS integer) >= CAST(format_datetime(date_add('day', -{days}, current_date),\
+      \ 'yyyyMMdd') AS integer)\n  GROUP BY itemname\n  HAVING SUM(itemsviewed) >= {min_views}\n),\nbenchmarks AS (\n  SELECT\n\
+      \    AVG(conversion_rate) as avg_conversion_rate,\n    AVG(revenue / NULLIF(purchases, 0)) as avg_revenue_per_purchase\n\
+      \  FROM product_stats\n)\nSELECT\n  p.itemname,\n  p.views,\n  p.carts,\n  p.purchases,\n  p.revenue,\n  p.conversion_rate,\n\
+      \  p.revenue / NULLIF(p.purchases, 0) as revenue_per_purchase,\n  p.conversion_rate - b.avg_conversion_rate as conversion_vs_avg,\n\
+      \  CASE\n    WHEN p.conversion_rate > b.avg_conversion_rate * 1.2 THEN 'Winner'\n    WHEN p.conversion_rate < b.avg_conversion_rate\
+      \ * 0.8 THEN 'Needs Improvement'\n    ELSE 'Average'\n  END as performance_category\nFROM product_stats p\nCROSS JOIN\
+      \ benchmarks b\nORDER BY p.revenue DESC\n"
+    metrics_calculated:
+    - conversion_rate_benchmarking
+    - performance_categorization
+    - winners_and_losers
+  instagram_top_posts_by_engagement:
+    name: Top Instagram Posts by Engagement
+    category: social_media
+    description: Identify best performing posts based on total engagement (likes + comments + saves + shares)
+    use_cases:
+    - Show my best performing Instagram posts
+    - Which posts got the most engagement?
+    - Top posts this month
+    - Best content by engagement rate
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      limit:
+        required: false
+        type: int
+        default: 20
+    template: "SELECT\n  m.id,\n  m.caption,\n  m.media_type,\n  m.timestamp,\n  m.permalink,\n  mi.likes,\n  mi.reach,\n\
+      \  mi.saved,\n  mi.comments,\n  mi.shares,\n  (mi.likes + mi.comments + mi.saved + mi.shares) as total_engagement,\n\
+      \  CAST((mi.likes + mi.comments + mi.saved + mi.shares) AS double) / NULLIF(mi.reach, 0) * 100 as engagement_rate\n\
+      FROM ps_labs_prod_processed_catalog.instagram_media m\nINNER JOIN ps_labs_prod_processed_catalog.instagram_media_insights\
+      \ mi\n  ON m.id = mi.id AND m.user_id = mi.user_id\nWHERE m.user_id = '{user_id}'\n  AND m.timestamp >= date_add('day',\
+      \ -{days}, current_date)\nORDER BY total_engagement DESC\nLIMIT {limit}"
+    metrics_calculated:
+    - total_engagement
+    - engagement_rate
+  instagram_reels_performance:
+    name: Instagram REELS Performance Analysis
+    category: social_media
+    description: Analyze REELS-specific metrics including watch time and retention
+    use_cases:
+    - Show my REELS performance
+    - Which REELS have the best watch time?
+    - REELS engagement analysis
+    - Top performing REELS
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+      limit:
+        required: false
+        type: int
+        default: 20
+    template: "SELECT\n  m.id,\n  m.caption,\n  m.timestamp,\n  m.permalink,\n  mi.likes,\n  mi.reach,\n  mi.saved,\n  mi.comments,\n\
+      \  mi.shares,\n  mi.ig_reels_avg_watch_time,\n  mi.ig_reels_video_view_total_time,\n  mi.ig_reels_video_view_total_time\
+      \ / NULLIF(mi.reach, 0) as avg_watch_time_per_viewer,\n  (mi.likes + mi.comments + mi.saved + mi.shares) as total_engagement,\n\
+      \  CAST((mi.likes + mi.comments + mi.saved + mi.shares) AS double) / NULLIF(mi.reach, 0) * 100 as engagement_rate\n\
+      FROM ps_labs_prod_processed_catalog.instagram_media m\nINNER JOIN ps_labs_prod_processed_catalog.instagram_media_insights\
+      \ mi\n  ON m.id = mi.id AND m.user_id = mi.user_id\nWHERE m.user_id = '{user_id}'\n  AND m.media_type = 'REELS'\n  AND\
+      \ m.timestamp >= date_add('day', -{days}, current_date)\n  AND mi.ig_reels_avg_watch_time IS NOT NULL\nORDER BY mi.ig_reels_avg_watch_time\
+      \ DESC\nLIMIT {limit}"
+    metrics_calculated:
+    - avg_watch_time
+    - total_watch_time
+    - engagement_rate
+  instagram_performance_by_media_type:
+    name: Instagram Performance by Media Type
+    category: social_media
+    description: Compare performance across different media types (IMAGE, VIDEO, CAROUSEL, REELS)
+    use_cases:
+    - Which content type performs best?
+    - Compare REELS vs carousel performance
+    - Performance by media type
+    - What content should I post more of?
+    parameters:
+      user_id:
+        required: true
+        type: string
+      days:
+        required: false
+        type: int
+        default: 30
+    template: "SELECT\n  m.media_type,\n  COUNT(DISTINCT m.id) as post_count,\n  AVG(mi.likes) as avg_likes,\n  AVG(mi.reach)\
+      \ as avg_reach,\n  AVG(mi.saved) as avg_saved,\n  AVG(mi.comments) as avg_comments,\n  AVG(mi.shares) as avg_shares,\n\
+      \  AVG((mi.likes + mi.comments + mi.saved + mi.shares)) as avg_total_engagement,\n  AVG(CAST((mi.likes + mi.comments\
+      \ + mi.saved + mi.shares) AS double) / NULLIF(mi.reach, 0) * 100) as avg_engagement_rate,\n  SUM(mi.likes) as total_likes,\n\
+      \  SUM(mi.reach) as total_reach\nFROM ps_labs_prod_processed_catalog.instagram_media m\nINNER JOIN ps_labs_prod_processed_catalog.instagram_media_insights\
+      \ mi\n  ON m.id = mi.id AND m.user_id = mi.user_id\nWHERE m.user_id = '{user_id}'\n  AND m.timestamp >= date_add('day',\
+      \ -{days}, current_date)\nGROUP BY m.media_type\nORDER BY avg_engagement_rate DESC"
+    metrics_calculated:
+    - avg_engagement_rate_by_type
+    - best_performing_media_type
 pattern_matching:
   keywords:
-    top_performing: ["top_performing_content", "content_performance_by_type"]
-    recent: ["recent_posts_with_metrics"]
-    saved: ["high_save_rate_content"]
-    frequency: ["posting_frequency_analysis"]
-    viral: ["viral_content_potential"]
-    trends: ["time_series_performance"]
-    compare: ["content_performance_by_type"]
-
+    top_performing:
+    - top_performing_content
+    - content_performance_by_type
+    recent:
+    - recent_posts_with_metrics
+    saved:
+    - high_save_rate_content
+    frequency:
+    - posting_frequency_analysis
+    viral:
+    - viral_content_potential
+    trends:
+    - time_series_performance
+    compare:
+    - content_performance_by_type
+    profile:
+    - instagram_latest_profile
+    followers:
+    - instagram_latest_profile
+    - instagram_follower_growth
+    - instagram_follower_growth_rate
+    growth:
+    - instagram_follower_growth
+    - instagram_follower_growth_rate
+    instagram_account:
+    - instagram_latest_profile
+    reach:
+    - instagram_daily_reach_metrics
+    - instagram_reach_to_follower_ratio
+    demographics:
+    - instagram_follower_demographics_age
+    - instagram_follower_demographics_country
+    - instagram_follower_demographics_city
+    - instagram_audience_demographics_summary
+    age:
+    - instagram_follower_demographics_age
+    country:
+    - instagram_follower_demographics_country
+    city:
+    - instagram_follower_demographics_city
+    audience:
+    - instagram_audience_demographics_summary
+    - instagram_follower_demographics_age
+    geographic:
+    - instagram_follower_demographics_country
+    - instagram_follower_demographics_city
+    location:
+    - instagram_follower_demographics_country
+    - instagram_follower_demographics_city
+    facebook:
+    - facebook_ads_performance_by_dma
+    - facebook_campaign_performance_summary
+    dma:
+    - facebook_ads_performance_by_dma
+    campaign:
+    - facebook_campaign_performance_summary
+    - facebook_daily_ad_spend_trend
+    quality:
+    - facebook_ad_quality_analysis
+    ad_spend:
+    - facebook_campaign_performance_summary
+    - facebook_daily_ad_spend_trend
+    bestsellers:
+    - ga_top_selling_products
+    revenue:
+    - ga_top_selling_products
+    - ga_daily_ecommerce_trend
+    funnel:
+    - ga_product_conversion_funnel
+    conversion:
+    - ga_product_conversion_funnel
+    - ga_underperforming_products
+    underperforming:
+    - ga_underperforming_products
+    ecommerce:
+    - ga_daily_ecommerce_trend
+    - ga_top_selling_products
+    products:
+    - ga_product_performance_comparison
+    - ga_top_selling_products
   question_patterns:
-    - pattern: ".*best.*content.*"
-      suggested_patterns: ["top_performing_content", "viral_content_potential"]
-    - pattern: ".*recent.*post.*"
-      suggested_patterns: ["recent_posts_with_metrics"]
-    - pattern: ".*reel.*vs.*post.*"
-      suggested_patterns: ["content_performance_by_type"]
-    - pattern: ".*saved.*content.*"
-      suggested_patterns: ["high_save_rate_content"]
-    - pattern: ".*how often.*post.*"
-      suggested_patterns: ["posting_frequency_analysis"]
-    - pattern: ".*performance.*time.*"
-      suggested_patterns: ["time_series_performance"]
+  - pattern: .*best.*content.*
+    suggested_patterns:
+    - top_performing_content
+    - viral_content_potential
+  - pattern: .*recent.*post.*
+    suggested_patterns:
+    - recent_posts_with_metrics
+  - pattern: .*reel.*vs.*post.*
+    suggested_patterns:
+    - content_performance_by_type
+  - pattern: .*saved.*content.*
+    suggested_patterns:
+    - high_save_rate_content
+  - pattern: .*how often.*post.*
+    suggested_patterns:
+    - posting_frequency_analysis
+  - pattern: .*performance.*time.*
+    suggested_patterns:
+    - time_series_performance
+  - pattern: .*(follower|instagram).*grow.*
+    suggested_patterns:
+    - instagram_follower_growth
+    - instagram_follower_growth_rate
+  - pattern: .*(reach|engagement).*
+    suggested_patterns:
+    - instagram_daily_reach_metrics
+    - instagram_reach_to_follower_ratio
+  - pattern: .*(best|top).*sell.*
+    suggested_patterns:
+    - ga_top_selling_products
+  - pattern: .*(conversion|funnel).*
+    suggested_patterns:
+    - ga_product_conversion_funnel
+  - pattern: .*(dma|region|geo|city|market).*
+    suggested_patterns:
+    - facebook_ads_performance_by_dma
+  - pattern: .*(campaign|ad).*performance.*
+    suggested_patterns:
+    - facebook_campaign_performance_summary
+  - pattern: .*(quality|ranking|score).*ad.*
+    suggested_patterns:
+    - facebook_ad_quality_analysis
+  - pattern: .*underperform.*
+    suggested_patterns:
+    - ga_underperforming_products
+    - facebook_ad_quality_analysis
+  - pattern: .*(daily|trend).*revenue.*
+    suggested_patterns:
+    - ga_daily_ecommerce_trend
+  - pattern: .*(compare|comparison).*product.*
+    suggested_patterns:
+    - ga_product_performance_comparison
+  - pattern: .*(age|demographic|audience).*breakdown.*
+    suggested_patterns:
+    - instagram_follower_demographics_age
+    - instagram_audience_demographics_summary
+  - pattern: .*(country|countries|geographic|location).*follower.*
+    suggested_patterns:
+    - instagram_follower_demographics_country
+  - pattern: .*(city|cities).*follower.*
+    suggested_patterns:
+    - instagram_follower_demographics_city
+  - pattern: .*(complete|full|entire).*demographic.*
+    suggested_patterns:
+    - instagram_audience_demographics_summary
