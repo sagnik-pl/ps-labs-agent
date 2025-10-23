@@ -66,7 +66,7 @@ def create_agent_workflow(checkpointer=None):
 
         # Handle early exits (out-of-scope queries, needs clarification)
         if next_step == "END":
-            return END
+            return "END"  # Return the string "END" to match the edge mapping
 
         # Handle comparison queries
         if next_step == "parallel_execute":
