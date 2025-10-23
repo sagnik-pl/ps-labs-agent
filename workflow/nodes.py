@@ -60,6 +60,7 @@ class WorkflowNodes:
                     "available_platforms": data_check['available_platforms']
                 },
                 "next_step": "END",  # Skip rest of workflow
+                "final_response": data_check['suggestion'],  # Set for API response
                 "messages": [AIMessage(content=data_check['suggestion'])]
             }
 
@@ -88,6 +89,7 @@ class WorkflowNodes:
                     "options": ambiguity_check['options']
                 },
                 "next_step": "END",  # Wait for user to provide more specific query
+                "final_response": formatted_message,  # Set for API response
                 "messages": [AIMessage(content=formatted_message)]
             }
 
