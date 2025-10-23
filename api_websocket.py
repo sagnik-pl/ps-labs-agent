@@ -265,6 +265,11 @@ async def process_query_with_progress(
         try:
             # Stream workflow execution and send progress for each node
             async for event in workflow.astream(initial_state, config=config):
+                # Validate event is a dict
+                if not isinstance(event, dict):
+                    logger.warning(f"Received non-dict event: {type(event)} = {event}")
+                    continue
+
                 # event is a dict with node_name as key and state as value
                 for node_name, node_output in event.items():
                     # Skip special nodes
