@@ -16,6 +16,14 @@ from utils.profile_defaults import (
     validate_preferences,
     format_profile_for_prompt,
 )
+from utils.encryption import (
+    generate_dek,
+    encrypt_message,
+    decrypt_message,
+    encode_key_for_storage,
+    decode_key_from_storage,
+)
+from utils.kms_client import get_kms_client
 
 logger = logging.getLogger(__name__)
 
@@ -75,17 +83,162 @@ class FirebaseClient:
             "chats"
         ).document(conversation_id)
 
+    def get_encryption_ref(self, user_id: str):
+        """Get Firestore reference to user's encryption key."""
+        return self.db.collection("conversations").document(user_id).collection(
+            "encryption"
+        ).document("key")
+
+    def get_or_create_user_dek(self, user_id: str) -> bytes:
+        """
+        Get user's Data Encryption Key (DEK), creating if it doesn't exist.
+
+        The DEK is encrypted with AWS KMS master key and stored in Firebase.
+        This method fetches the encrypted DEK, decrypts it with KMS, and returns
+        the plaintext DEK for use in message encryption/decryption.
+
+        Args:
+            user_id: User's Firebase Auth ID
+
+        Returns:
+            bytes: 32-byte decrypted DEK ready for use
+
+        Raises:
+            Exception: If encryption is disabled or KMS operations fail
+        """
+        from config.settings import settings
+
+        if not settings.encryption_enabled:
+            raise Exception("Encryption is disabled - cannot get DEK")
+
+        try:
+            # Check if user already has a DEK
+            encryption_ref = self.get_encryption_ref(user_id)
+            doc = encryption_ref.get()
+
+            if doc.exists:
+                # Decrypt existing DEK
+                logger.debug(f"Fetching existing DEK for user {user_id[:8]}...")
+                encrypted_dek = doc.to_dict().get("encrypted_dek")
+
+                if not encrypted_dek:
+                    raise Exception("User encryption doc exists but encrypted_dek field is missing")
+
+                # Decrypt with KMS
+                kms = get_kms_client()
+                dek = kms.decrypt_dek(encrypted_dek)
+
+                logger.debug(f"✅ DEK decrypted for user {user_id[:8]}...")
+                return dek
+
+            else:
+                # Generate new DEK for user
+                logger.info(f"Generating new DEK for user {user_id[:8]}...")
+
+                dek = generate_dek()
+
+                # Encrypt with KMS
+                kms = get_kms_client()
+                encrypted_dek = kms.encrypt_dek(dek)
+
+                # Store in Firebase
+                from datetime import datetime, timezone
+                encryption_ref.set({
+                    "user_id": user_id,
+                    "encrypted_dek": encrypted_dek,
+                    "created_at": datetime.now(timezone.utc),
+                    "algorithm": "AES-256-GCM",
+                    "kms_key_version": "v1"
+                })
+
+                logger.info(f"✅ New DEK created and stored for user {user_id[:8]}...")
+                return dek
+
+        except Exception as e:
+            logger.error(f"❌ Failed to get/create DEK for user {user_id[:8]}: {e}")
+            raise
+
     def get_conversation_history(
         self, user_id: str, conversation_id: str
     ) -> List[Dict[str, Any]]:
-        """Retrieve conversation history from Firestore."""
+        """
+        Retrieve conversation history from Firestore.
+
+        Automatically decrypts encrypted messages if encryption is enabled.
+        Handles mixed encrypted/plaintext messages for backward compatibility.
+
+        Args:
+            user_id: User's Firebase Auth ID
+            conversation_id: Conversation UUID
+
+        Returns:
+            List of message dicts with decrypted content
+        """
+        from config.settings import settings
+
         conv_ref = self.get_conversation_ref(user_id, conversation_id)
         doc = conv_ref.get()
 
-        if doc.exists:
-            data = doc.to_dict()
-            return data.get("messages", [])
-        return []
+        if not doc.exists:
+            return []
+
+        data = doc.to_dict()
+        messages = data.get("messages", [])
+
+        # If encryption is disabled, return messages as-is
+        if not settings.encryption_enabled:
+            return messages
+
+        # Decrypt encrypted messages
+        try:
+            dek = None  # Lazy-load DEK only if needed
+
+            decrypted_messages = []
+            for msg in messages:
+                # Check if message is encrypted
+                if msg.get("encrypted", False):
+                    try:
+                        # Lazy-load DEK on first encrypted message
+                        if dek is None:
+                            dek = self.get_or_create_user_dek(user_id)
+
+                        # Decrypt message content
+                        encrypted_data = {
+                            "ciphertext": msg["content"],
+                            "nonce": msg["nonce"],
+                            "version": msg.get("encryption_version", 1),
+                            "algorithm": msg.get("algorithm", "AES-256-GCM")
+                        }
+                        plaintext = decrypt_message(encrypted_data, dek)
+
+                        # Return decrypted message (remove encryption metadata)
+                        decrypted_msg = {
+                            "role": msg["role"],
+                            "content": plaintext,
+                            "timestamp": msg["timestamp"],
+                            "metadata": msg.get("metadata", {})
+                        }
+                        decrypted_messages.append(decrypted_msg)
+
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt message: {e}")
+                        # Return placeholder for failed decryption
+                        decrypted_messages.append({
+                            "role": msg.get("role", "unknown"),
+                            "content": "[Decryption failed]",
+                            "timestamp": msg.get("timestamp"),
+                            "metadata": {"decryption_error": str(e)}
+                        })
+                else:
+                    # Plaintext message (backward compatibility)
+                    decrypted_messages.append(msg)
+
+            return decrypted_messages
+
+        except Exception as e:
+            logger.error(f"Error processing conversation history: {e}")
+            # Return plaintext messages if decryption setup fails
+            return messages
 
     def save_message(
         self,
@@ -122,14 +275,52 @@ class FirebaseClient:
             conv_ref = self.get_conversation_ref(user_id, conversation_id)
             doc = conv_ref.get()
 
-            message = {
-                "role": role,
-                "content": content,
-                "timestamp": now,
-                "metadata": metadata or {},
-            }
+            # Encrypt message if encryption is enabled
+            from config.settings import settings
 
-            # Create last_message preview (first 50 chars)
+            if settings.encryption_enabled:
+                try:
+                    # Get user's DEK
+                    dek = self.get_or_create_user_dek(user_id)
+
+                    # Encrypt message content
+                    encrypted_data = encrypt_message(content, dek)
+
+                    # Create encrypted message
+                    message = {
+                        "role": role,
+                        "content": encrypted_data['ciphertext'],
+                        "encrypted": True,
+                        "nonce": encrypted_data['nonce'],
+                        "encryption_version": encrypted_data['version'],
+                        "algorithm": encrypted_data['algorithm'],
+                        "timestamp": now,
+                        "metadata": metadata or {},
+                    }
+
+                    logger.debug(f"✅ Message encrypted for user {user_id[:8]}...")
+
+                except Exception as e:
+                    logger.error(f"❌ Encryption failed for user {user_id[:8]}: {e}")
+                    # Fall back to plaintext if encryption fails
+                    message = {
+                        "role": role,
+                        "content": content,
+                        "encrypted": False,
+                        "timestamp": now,
+                        "metadata": metadata or {},
+                    }
+            else:
+                # Store plaintext if encryption is disabled
+                message = {
+                    "role": role,
+                    "content": content,
+                    "encrypted": False,
+                    "timestamp": now,
+                    "metadata": metadata or {},
+                }
+
+            # Create last_message preview (first 50 chars of plaintext)
             last_message_preview = content[:50] + "..." if len(content) > 50 else content
 
             if doc.exists:

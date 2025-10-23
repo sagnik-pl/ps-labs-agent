@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:3000"
 
+    # Encryption Configuration (End-to-End Encryption for Chat Messages)
+    encryption_enabled: bool = Field(default=False, description="Enable message encryption")
+    kms_key_id: Optional[str] = Field(default=None, description="AWS KMS key ID for envelope encryption")
+
     @property
     def athena_s3_output_location(self) -> str:
         """Get Athena S3 output location based on environment."""

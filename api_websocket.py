@@ -549,6 +549,167 @@ async def get_profile_summary(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== Encryption Key Management Endpoints ==========
+
+@app.get("/encryption/status")
+async def get_encryption_status():
+    """
+    Get encryption feature status.
+
+    Returns:
+        Dict with encryption_enabled and KMS configuration status
+    """
+    from utils.kms_client import get_kms_client
+
+    try:
+        kms = get_kms_client()
+
+        return {
+            "encryption_enabled": settings.encryption_enabled,
+            "kms_configured": kms.encryption_enabled and kms.kms_key_id is not None,
+            "environment": settings.environment
+        }
+    except Exception as e:
+        logger.error(f"Error checking encryption status: {e}")
+        return {
+            "encryption_enabled": False,
+            "kms_configured": False,
+            "error": str(e)
+        }
+
+
+@app.post("/users/{user_id}/encryption-key/initialize")
+async def initialize_user_encryption_key(user_id: str):
+    """
+    Initialize encryption key for a user.
+
+    This endpoint generates a new Data Encryption Key (DEK) for the user,
+    encrypts it with AWS KMS, and stores it in Firebase. This is called
+    automatically when a user sends their first encrypted message.
+
+    Args:
+        user_id: User's Firebase Auth ID
+
+    Returns:
+        Success status and key metadata
+    """
+    try:
+        if not settings.encryption_enabled:
+            raise HTTPException(
+                status_code=400,
+                detail="Encryption is not enabled on this server"
+            )
+
+        # Get or create user's DEK (auto-creates if doesn't exist)
+        dek = firebase_client.get_or_create_user_dek(user_id)
+
+        logger.info(f"✅ Encryption key initialized for user {user_id[:8]}...")
+
+        return {
+            "success": True,
+            "user_id": user_id,
+            "message": "Encryption key initialized successfully",
+            "key_length": len(dek),
+            "algorithm": "AES-256-GCM"
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to initialize encryption key for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/users/{user_id}/encryption-key/status")
+async def get_user_encryption_key_status(user_id: str):
+    """
+    Check if user has an encryption key set up.
+
+    Args:
+        user_id: User's Firebase Auth ID
+
+    Returns:
+        Dict with key existence status and metadata
+    """
+    try:
+        if not settings.encryption_enabled:
+            return {
+                "encryption_enabled": False,
+                "has_key": False,
+                "message": "Encryption is disabled on this server"
+            }
+
+        # Check if user has encryption key in Firebase
+        encryption_ref = firebase_client.get_encryption_ref(user_id)
+        doc = encryption_ref.get()
+
+        if doc.exists:
+            key_data = doc.to_dict()
+            return {
+                "encryption_enabled": True,
+                "has_key": True,
+                "created_at": key_data.get("created_at"),
+                "algorithm": key_data.get("algorithm"),
+                "kms_key_version": key_data.get("kms_key_version")
+            }
+        else:
+            return {
+                "encryption_enabled": True,
+                "has_key": False,
+                "message": "No encryption key found for this user"
+            }
+
+    except Exception as e:
+        logger.error(f"Error checking encryption key status for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/debug/encryption-test")
+async def test_encryption():
+    """
+    Test encryption system end-to-end.
+
+    Tests:
+    1. KMS access
+    2. Encryption/decryption roundtrip
+    3. Firebase key storage
+
+    Returns:
+        Test results
+    """
+    from utils.kms_client import get_kms_client
+    from utils.encryption import test_encryption_roundtrip
+
+    results = {
+        "encryption_enabled": settings.encryption_enabled,
+        "tests": {}
+    }
+
+    if not settings.encryption_enabled:
+        results["message"] = "Encryption is disabled - tests skipped"
+        return results
+
+    try:
+        # Test 1: KMS access
+        kms = get_kms_client()
+        kms_test = kms.test_kms_access()
+        results["tests"]["kms_access"] = "✅ PASSED" if kms_test else "❌ FAILED"
+
+        # Test 2: Encryption roundtrip
+        encryption_test = test_encryption_roundtrip("Test message for encryption")
+        results["tests"]["encryption_roundtrip"] = "✅ PASSED" if encryption_test else "❌ FAILED"
+
+        # Test 3: KMS key info
+        key_info = kms.get_key_info()
+        results["tests"]["kms_key_info"] = key_info
+
+        results["overall"] = "✅ ALL TESTS PASSED" if (kms_test and encryption_test) else "❌ SOME TESTS FAILED"
+
+    except Exception as e:
+        results["error"] = str(e)
+        results["overall"] = "❌ TESTS FAILED WITH ERROR"
+
+    return results
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
