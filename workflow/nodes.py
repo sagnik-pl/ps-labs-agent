@@ -165,6 +165,7 @@ class WorkflowNodes:
 
         return {
             "plan": plan,
+            "next_step": "router",  # Explicitly set next step to prevent LLM leakage
             "messages": [AIMessage(content=f"Plan created: {plan['reasoning']}")],
         }
 
