@@ -421,6 +421,44 @@ async def get_messages(user_id: str, conversation_id: str, limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/conversations/{user_id}/{conversation_id}")
+async def delete_conversation(user_id: str, conversation_id: str):
+    """
+    Delete a conversation permanently.
+
+    Args:
+        user_id: User ID
+        conversation_id: Conversation ID to delete
+
+    Returns:
+        Success message if deleted, error if not found or failed
+
+    Security:
+        - User isolation enforced via user_id in path
+        - Permanent deletion (cannot be recovered)
+    """
+    try:
+        deleted = firebase_client.delete_conversation(user_id, conversation_id)
+
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Conversation {conversation_id} not found for user {user_id}"
+            )
+
+        return {
+            "message": "Conversation deleted successfully",
+            "user_id": user_id,
+            "conversation_id": conversation_id
+        }
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 404)
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting conversation {conversation_id} for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== User Profile Endpoints ==========
 
 @app.get("/users/{user_id}/profile")

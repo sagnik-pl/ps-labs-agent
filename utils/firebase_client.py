@@ -480,6 +480,37 @@ class FirebaseClient:
         doc = conv_ref.get()
         return not doc.exists
 
+    def delete_conversation(self, user_id: str, conversation_id: str) -> bool:
+        """
+        Delete a conversation permanently from Firestore.
+
+        Args:
+            user_id: User ID
+            conversation_id: Conversation ID
+
+        Returns:
+            True if conversation was deleted, False if it didn't exist
+
+        Raises:
+            Exception: If deletion fails
+        """
+        try:
+            conv_ref = self.get_conversation_ref(user_id, conversation_id)
+            doc = conv_ref.get()
+
+            if not doc.exists:
+                logger.warning(f"Cannot delete non-existent conversation: {conversation_id[:12]}... for user {user_id[:8]}...")
+                return False
+
+            # Delete the conversation document
+            conv_ref.delete()
+            logger.info(f"✅ Deleted conversation {conversation_id[:12]}... for user {user_id[:8]}...")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error deleting conversation {conversation_id[:12]}...: {e}")
+            raise Exception(f"Failed to delete conversation: {str(e)}")
+
     def _get_conversation_preview(self, messages: List[Dict[str, Any]]) -> str:
         """
         Get a preview of the conversation (first user message).
