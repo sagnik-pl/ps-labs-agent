@@ -320,10 +320,29 @@ async def process_query_with_progress(
             # Don't raise - handle error response below
             result = {"final_response": f"I encountered an error processing your request: {str(stream_error)}", "metadata": {"error": True}}
 
-        # Send final result
-        final_response = result.get("final_response", "No response generated")
+        # Extract final response with fallback logic for different workflow paths
+        # Priority order: final_response > execution_plan.message > formatted_output > data_interpretation
+        final_response = (
+            result.get("final_response") or                      # Primary location (set by interpreter_node and early-exit nodes)
+            result.get("execution_plan", {}).get("message") or   # Early-exit messages (out-of-scope, needs-clarification)
+            result.get("formatted_output") or                    # Output formatter path
+            result.get("data_interpretation") or                 # Data interpreter path
+            "No response generated"                              # Ultimate fallback
+        )
+
+        # Build metadata with execution plan info if available
         metadata = result.get("metadata", {})
+        if "execution_plan" in result and not metadata:
+            # For early-exit paths, include execution plan in metadata
+            metadata = {
+                "execution_plan": result["execution_plan"],
+                "routing_decision": result.get("routing_decision"),
+            }
+
+        logger.info(f"📊 Result keys: {list(result.keys())}")
         logger.info(f"📤 Final response ready: {len(final_response)} characters")
+        if len(final_response) < 200:
+            logger.info(f"📝 Response preview: {final_response[:150]}...")
 
         # Save response to Firestore (both success and error cases)
         try:
