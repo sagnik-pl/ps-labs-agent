@@ -522,70 +522,137 @@ class SemanticLayer:
         """
         Detect if user is asking ABOUT data availability rather than requesting data.
 
-        Identifies meta-queries about what data exists or is available:
-        - "Do you have demographic data?"
-        - "Is there audience breakdown available?"
-        - "What demographic data do you have?"
-        - "Can you show me audience demographics?"
+        Identifies three types of meta-queries:
+        1. Greeting messages (hi, hello, thanks, etc.)
+        2. General platform data inquiries (what data do you have on Instagram?)
+        3. Specific data type inquiries (do you have demographic data?)
 
         Args:
             user_query: Natural language query from user
 
         Returns:
             Dict with:
-                - is_inquiry: bool (True if asking about data availability)
-                - data_topic: str (what kind of data they're asking about)
-                - response: str (informative response about available data)
+                - is_inquiry: bool (True if asking about data availability or greeting)
+                - data_topic: str (what kind of inquiry: 'greeting', 'platform_data', 'demographics')
+                - response: str (informative response)
         """
-        query_lower = user_query.lower()
+        query_lower = user_query.lower().strip()
+        words = query_lower.split()
 
-        # Inquiry patterns - asking ABOUT data availability
+        # ========== CHECK 1: Greeting Detection ==========
+        GREETING_PATTERNS = [
+            'hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening',
+            'how are you', 'how r you', 'whats up', "what's up", 'wassup'
+        ]
+        THANKS_PATTERNS = ['thanks', 'thank you', 'thank u', 'thx', 'ty']
+        PLEASE_PATTERNS = ['please', 'pls', 'plz']
+
+        # Check if it's ONLY a greeting/thanks/please without meaningful content
+        is_greeting = any(pattern in query_lower for pattern in GREETING_PATTERNS)
+        is_thanks_only = any(pattern in query_lower for pattern in THANKS_PATTERNS) and len(words) <= 3
+        is_please_only = any(pattern in query_lower for pattern in PLEASE_PATTERNS) and len(words) <= 2
+
+        if is_greeting or is_thanks_only or is_please_only:
+            # Make sure it's not combined with actual data request
+            data_keywords = ['show', 'get', 'fetch', 'analyze', 'data', 'insights', 'metrics', 'performance',
+                           'revenue', 'sales', 'followers', 'engagement', 'reach', 'impressions']
+            has_data_request = any(keyword in query_lower for keyword in data_keywords)
+
+            if not has_data_request and len(words) <= 5:
+                return {
+                    'is_inquiry': True,
+                    'data_topic': 'greeting',
+                    'response': (
+                        "Hello! I'm your e-commerce data analytics assistant. "
+                        "I can help you analyze your Instagram performance, demographics, and more.\n\n"
+                        "Feel free to ask me things like:\n"
+                        "- \"Show me my Instagram reach for the last 30 days\"\n"
+                        "- \"What are my follower demographics?\"\n"
+                        "- \"How is my engagement trending?\""
+                    )
+                }
+
+        # ========== CHECK 2: General Platform Data Inquiry ==========
         INQUIRY_PATTERNS = [
-            'do you have', 'do u have', 'd you have',
-            'is there', 'are there',
-            'what data', 'what information', 'what metrics',
-            'can you show', 'can i see', 'can you give me',
-            'available data', 'data available'
+            'what data', 'what information', 'what metrics', 'what info',
+            'available data', 'data available', 'what do you have'
+        ]
+        PLATFORM_KEYWORDS = [
+            r'\binstagram\b', r'\binsta\b', r'\big\b',
+            'social media', 'platform'
         ]
 
-        # Check if query contains inquiry pattern
         has_inquiry_pattern = any(pattern in query_lower for pattern in INQUIRY_PATTERNS)
+        mentions_platform = any(re.search(pattern, query_lower) for pattern in PLATFORM_KEYWORDS)
 
-        if not has_inquiry_pattern:
+        if has_inquiry_pattern and mentions_platform:
+            # General platform data inquiry - list all available data types from schema
             return {
-                'is_inquiry': False,
-                'data_topic': None,
-                'response': None
+                'is_inquiry': True,
+                'data_topic': 'platform_data',
+                'response': (
+                    "I have access to comprehensive Instagram data for your account, including:\n\n"
+                    "**Post & Content Data:**\n"
+                    "- Media insights (likes, comments, saves, shares, reach, impressions)\n"
+                    "- Engagement rates and performance metrics\n"
+                    "- Post timing and content type analysis\n\n"
+                    "**Audience Demographics:**\n"
+                    "- Follower breakdown by age and gender\n"
+                    "- Geographic distribution (countries and cities)\n"
+                    "- Audience growth trends\n\n"
+                    "**Account Performance:**\n"
+                    "- Profile views and website clicks\n"
+                    "- Follower counts and growth\n"
+                    "- Overall reach and impressions\n\n"
+                    "What would you like to explore? For example:\n"
+                    "- \"Show me my top performing posts\"\n"
+                    "- \"What are my follower demographics?\"\n"
+                    "- \"Analyze my engagement trends\""
+                )
             }
 
-        # Demographic data keywords
+        # ========== CHECK 3: Specific Demographic Data Inquiry ==========
         DEMOGRAPHIC_KEYWORDS = [
             'demographic', 'demographics', 'demograph',
             'audience breakdown', 'audience data', 'audience details',
-            'follower breakdown', 'follower demographics', 'follower data',
-            'age', 'gender', 'location', 'country', 'city'
+            'follower breakdown', 'follower demographics', 'follower data'
         ]
 
-        # Check if asking about demographic data
+        specific_inquiry_patterns = ['do you have', 'do u have', 'd you have', 'is there', 'are there']
+        has_specific_inquiry = any(pattern in query_lower for pattern in specific_inquiry_patterns)
         is_demographic_inquiry = any(keyword in query_lower for keyword in DEMOGRAPHIC_KEYWORDS)
 
-        if is_demographic_inquiry:
-            return {
-                'is_inquiry': True,
-                'data_topic': 'demographics',
-                'response': (
-                    "Yes! I have access to your Instagram follower demographic data, which includes:\n\n"
-                    "**Available Demographic Breakdowns:**\n"
-                    "- **Age & Gender**: Distribution of followers by age groups and gender\n"
-                    "- **Country**: Top countries where your followers are located\n"
-                    "- **City**: Top cities where your followers are located\n\n"
-                    "This data is pulled from Instagram's User Lifetime Insights.\n\n"
-                    "Would you like me to show you any of these demographic breakdowns? For example:\n"
-                    "- \"Show me follower demographics by age and gender\"\n"
-                    "- \"What countries are my followers from?\"\n"
-                    "- \"Show me follower breakdown by city\""
-                )
-            }
+        if has_specific_inquiry and is_demographic_inquiry:
+            # Check if platform is mentioned, otherwise ask for clarification
+            if mentions_platform:
+                return {
+                    'is_inquiry': True,
+                    'data_topic': 'demographics_instagram',
+                    'response': (
+                        "Yes! I have access to Instagram follower demographic data, including:\n\n"
+                        "**Available Demographic Breakdowns:**\n"
+                        "- **Age & Gender**: Distribution of followers by age groups and gender\n"
+                        "- **Country**: Top countries where your followers are located\n"
+                        "- **City**: Top cities where your followers are located\n\n"
+                        "Would you like me to show you any of these breakdowns? For example:\n"
+                        "- \"Show me follower demographics by age and gender\"\n"
+                        "- \"What countries are my followers from?\"\n"
+                        "- \"Show me follower breakdown by city\""
+                    )
+                }
+            else:
+                # No platform specified - ask for clarification
+                return {
+                    'is_inquiry': True,
+                    'data_topic': 'demographics_platform_clarification',
+                    'response': (
+                        "I have demographic data available for **Instagram** (currently the only platform with demographic insights).\n\n"
+                        "Would you like to see your Instagram follower demographics? This includes:\n"
+                        "- Age and gender breakdown\n"
+                        "- Geographic distribution by country and city\n\n"
+                        "Just let me know if you'd like to see this data!"
+                    )
+                }
 
         # Default: not a recognized data inquiry
         return {
