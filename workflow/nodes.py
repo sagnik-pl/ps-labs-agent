@@ -39,12 +39,31 @@ class WorkflowNodes:
             Updated state with execution plan
         """
         from utils.profile_defaults import format_profile_for_prompt
-        from utils.semantic_layer import check_data_availability, detect_ambiguous_query, detect_comparison_query
+        from utils.semantic_layer import check_data_availability, detect_ambiguous_query, detect_comparison_query, detect_data_inquiry_query
         from utils.query_splitter import split_comparison_query
 
         query = state["query"]
         context = state.get("context", "")
         user_profile = state.get("user_profile")
+
+        # ========== CHECK 0: Data Inquiry Detection ==========
+        # Check if user is asking ABOUT data availability (meta-query) rather than requesting data
+        inquiry_check = detect_data_inquiry_query(query)
+
+        if inquiry_check['is_inquiry']:
+            # User is asking about what data is available - provide informative response
+            # IMPORTANT: Preserve existing state to maintain user_id, conversation_id, etc.
+            return {
+                **state,  # Spread existing state to preserve required fields
+                "execution_plan": {
+                    "type": "data_inquiry",
+                    "data_topic": inquiry_check['data_topic'],
+                    "message": inquiry_check['response']
+                },
+                "next_step": "END",  # Skip rest of workflow
+                "final_response": inquiry_check['response'],  # Set for API response
+                "messages": state.get("messages", []) + [AIMessage(content=inquiry_check['response'])]
+            }
 
         # ========== CHECK 1: Out-of-Scope Data Detection ==========
         # Before planning, check if user is asking for data we don't have

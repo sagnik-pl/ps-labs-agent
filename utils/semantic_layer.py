@@ -518,6 +518,82 @@ class SemanticLayer:
             'suggestion': None
         }
 
+    def detect_data_inquiry_query(self, user_query: str) -> Dict[str, Any]:
+        """
+        Detect if user is asking ABOUT data availability rather than requesting data.
+
+        Identifies meta-queries about what data exists or is available:
+        - "Do you have demographic data?"
+        - "Is there audience breakdown available?"
+        - "What demographic data do you have?"
+        - "Can you show me audience demographics?"
+
+        Args:
+            user_query: Natural language query from user
+
+        Returns:
+            Dict with:
+                - is_inquiry: bool (True if asking about data availability)
+                - data_topic: str (what kind of data they're asking about)
+                - response: str (informative response about available data)
+        """
+        query_lower = user_query.lower()
+
+        # Inquiry patterns - asking ABOUT data availability
+        INQUIRY_PATTERNS = [
+            'do you have', 'do u have', 'd you have',
+            'is there', 'are there',
+            'what data', 'what information', 'what metrics',
+            'can you show', 'can i see', 'can you give me',
+            'available data', 'data available'
+        ]
+
+        # Check if query contains inquiry pattern
+        has_inquiry_pattern = any(pattern in query_lower for pattern in INQUIRY_PATTERNS)
+
+        if not has_inquiry_pattern:
+            return {
+                'is_inquiry': False,
+                'data_topic': None,
+                'response': None
+            }
+
+        # Demographic data keywords
+        DEMOGRAPHIC_KEYWORDS = [
+            'demographic', 'demographics', 'demograph',
+            'audience breakdown', 'audience data', 'audience details',
+            'follower breakdown', 'follower demographics', 'follower data',
+            'age', 'gender', 'location', 'country', 'city'
+        ]
+
+        # Check if asking about demographic data
+        is_demographic_inquiry = any(keyword in query_lower for keyword in DEMOGRAPHIC_KEYWORDS)
+
+        if is_demographic_inquiry:
+            return {
+                'is_inquiry': True,
+                'data_topic': 'demographics',
+                'response': (
+                    "Yes! I have access to your Instagram follower demographic data, which includes:\n\n"
+                    "**Available Demographic Breakdowns:**\n"
+                    "- **Age & Gender**: Distribution of followers by age groups and gender\n"
+                    "- **Country**: Top countries where your followers are located\n"
+                    "- **City**: Top cities where your followers are located\n\n"
+                    "This data is pulled from Instagram's User Lifetime Insights.\n\n"
+                    "Would you like me to show you any of these demographic breakdowns? For example:\n"
+                    "- \"Show me follower demographics by age and gender\"\n"
+                    "- \"What countries are my followers from?\"\n"
+                    "- \"Show me follower breakdown by city\""
+                )
+            }
+
+        # Default: not a recognized data inquiry
+        return {
+            'is_inquiry': False,
+            'data_topic': None,
+            'response': None
+        }
+
     def detect_comparison_query(self, user_query: str) -> Dict[str, Any]:
         """
         Detect if a user query is asking for a comparison.
@@ -948,3 +1024,8 @@ def detect_ambiguous_query(user_query: str) -> Dict[str, Any]:
 def detect_comparison_query(user_query: str) -> Dict[str, Any]:
     """Detect if query is asking for a comparison between two things."""
     return semantic_layer.detect_comparison_query(user_query)
+
+
+def detect_data_inquiry_query(user_query: str) -> Dict[str, Any]:
+    """Detect if user is asking ABOUT data availability rather than requesting data."""
+    return semantic_layer.detect_data_inquiry_query(user_query)
