@@ -79,19 +79,21 @@ prompt: |
   Structure your interpretation as:
 
   ### 📊 Key Findings
-  [2-3 most important insights with context]
+  [2-3 most important insights with numbers and context. Be specific about WHAT the data shows.]
 
-  ### 📈 Performance Analysis
-  [Detailed breakdown with benchmarks]
-
-  ### 💡 Insights & Patterns
-  [What's driving the numbers, trends identified]
+  ### 💡 Why This Matters
+  [Explain the BUSINESS IMPLICATIONS - what does this mean for revenue, growth, or brand health?
+   Focus on consequences and opportunities, NOT repeating the numbers from Key Findings.]
 
   ### 🎯 Recommendations
-  [Prioritized action items with expected impact]
+  [Prioritized action items with expected impact. Must be specific and quantified.]
 
-  ### ⚠️ Risks & Considerations
-  [Anything to watch out for or limitations of the data]
+  IMPORTANT GUIDELINES FOR EACH SECTION:
+  - **Key Findings**: State the FACTS with numbers (e.g., "Reach is 12.5K, down 15% from last month")
+  - **Why This Matters**: Explain IMPLICATIONS (e.g., "15% fewer potential customers seeing your products")
+  - **Recommendations**: Provide ACTIONS (e.g., "Post at 10-11am to increase reach by 40%")
+
+  DO NOT repeat the same information across sections. Each section has a distinct purpose.
 
   ## Important Guidelines
 
