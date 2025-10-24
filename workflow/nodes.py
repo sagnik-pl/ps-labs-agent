@@ -392,7 +392,8 @@ class WorkflowNodes:
                 "raw_data": raw_data,
                 "context": context,
                 "feedback": feedback or "No previous feedback",
-                "profile_context": profile_context
+                "profile_context": profile_context,
+                "user_id": state.get("user_id", "unknown")  # Add user_id for SQL examples in knowledge bases
             }
         )
 
