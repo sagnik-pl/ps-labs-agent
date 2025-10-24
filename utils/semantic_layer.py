@@ -486,10 +486,13 @@ class SemanticLayer:
             AVAILABLE_PLATFORMS.append('Meta Ads (Facebook/Instagram Ads)')
 
         # Check for unavailable platform mentions
+        # IMPORTANT: Use word boundary matching to avoid false positives
+        # (e.g., "again" should NOT match "ga" for Google Analytics)
         missing_platforms = []
         for platform, keywords in UNAVAILABLE_PLATFORMS.items():
             for keyword in keywords:
-                if keyword in query_lower:
+                # Use word boundary matching for better precision
+                if re.search(rf'\b{re.escape(keyword)}\b', query_lower):
                     missing_platforms.append(platform.replace('_', ' ').title())
                     break
 
@@ -839,8 +842,15 @@ class SemanticLayer:
 
         mentions_platform = any(platform in query_lower for platform in platform_keywords)
 
-        # If it's a vague status query about a platform (e.g., "how's insta?", "how is instagram?")
-        if has_vague_phrase and mentions_platform and is_very_short:
+        # If it's a vague status query about a platform (e.g., "how's insta?", "how is instagram?", "hows insta doing again?")
+        # Trigger if: vague phrase + platform mention + reasonably short (≤8 words) + no specific metrics mentioned
+        is_reasonably_short = len(words) <= 8
+
+        # Check if specific metrics are mentioned (if so, it's not ambiguous)
+        specific_metrics = ['engagement', 'reach', 'impressions', 'followers', 'likes', 'comments', 'saves', 'shares', 'revenue', 'sales', 'conversions']
+        has_specific_metric = any(metric in query_lower for metric in specific_metrics)
+
+        if has_vague_phrase and mentions_platform and is_reasonably_short and not has_specific_metric:
             # User is asking "how's [platform]?" without specifying what they want to know
             clarification_data = {
                 "question": "I can help analyze your Instagram performance! What would you like to know specifically?",
