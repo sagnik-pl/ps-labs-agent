@@ -539,7 +539,34 @@ class SemanticLayer:
         query_lower = user_query.lower().strip()
         words = query_lower.split()
 
-        # ========== CHECK 1: Greeting Detection ==========
+        # ========== CHECK 1: Detect Actual Data Requests (to avoid false positives) ==========
+        # Patterns that indicate user wants actual data, not meta-information
+        DATA_REQUEST_VERBS = [
+            'show', 'get', 'fetch', 'give me', 'tell me', 'find',
+            'display', 'list', 'see', 'view', 'what are', 'what is',
+            'how many', 'how much', 'calculate', 'compute'
+        ]
+
+        # Check if query starts with or contains data request verbs
+        is_data_request = any(query_lower.startswith(verb) or f" {verb} " in f" {query_lower} "
+                             for verb in DATA_REQUEST_VERBS)
+
+        # Also check for specific data requests about metrics/demographics
+        requests_specific_data = any(term in query_lower for term in [
+            'my followers', 'my engagement', 'my reach', 'my performance',
+            'follower demographics', 'follower breakdown', 'audience demographics',
+            'top posts', 'recent posts', 'post performance'
+        ])
+
+        # If it's clearly a data request, skip inquiry detection entirely
+        if is_data_request or requests_specific_data:
+            return {
+                'is_inquiry': False,
+                'data_topic': None,
+                'response': None
+            }
+
+        # ========== CHECK 2: Greeting Detection ==========
         GREETING_PATTERNS = [
             'hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening',
             'how are you', 'how r you', 'whats up', "what's up", 'wassup'
@@ -552,27 +579,21 @@ class SemanticLayer:
         is_thanks_only = any(pattern in query_lower for pattern in THANKS_PATTERNS) and len(words) <= 3
         is_please_only = any(pattern in query_lower for pattern in PLEASE_PATTERNS) and len(words) <= 2
 
-        if is_greeting or is_thanks_only or is_please_only:
-            # Make sure it's not combined with actual data request
-            data_keywords = ['show', 'get', 'fetch', 'analyze', 'data', 'insights', 'metrics', 'performance',
-                           'revenue', 'sales', 'followers', 'engagement', 'reach', 'impressions']
-            has_data_request = any(keyword in query_lower for keyword in data_keywords)
+        if (is_greeting or is_thanks_only or is_please_only) and len(words) <= 5:
+            return {
+                'is_inquiry': True,
+                'data_topic': 'greeting',
+                'response': (
+                    "Hello! I'm your e-commerce data analytics assistant. "
+                    "I can help you analyze your Instagram performance, demographics, and more.\n\n"
+                    "Feel free to ask me things like:\n"
+                    "- \"Show me my Instagram reach for the last 30 days\"\n"
+                    "- \"What are my follower demographics?\"\n"
+                    "- \"How is my engagement trending?\""
+                )
+            }
 
-            if not has_data_request and len(words) <= 5:
-                return {
-                    'is_inquiry': True,
-                    'data_topic': 'greeting',
-                    'response': (
-                        "Hello! I'm your e-commerce data analytics assistant. "
-                        "I can help you analyze your Instagram performance, demographics, and more.\n\n"
-                        "Feel free to ask me things like:\n"
-                        "- \"Show me my Instagram reach for the last 30 days\"\n"
-                        "- \"What are my follower demographics?\"\n"
-                        "- \"How is my engagement trending?\""
-                    )
-                }
-
-        # ========== CHECK 2: General Platform Data Inquiry ==========
+        # ========== CHECK 3: General Platform Data Inquiry ==========
         INQUIRY_PATTERNS = [
             'what data', 'what information', 'what metrics', 'what info',
             'available data', 'data available', 'what do you have'
