@@ -56,6 +56,14 @@ prompt: |
   - **Column Selection**: Select specific columns instead of SELECT * when possible
   - **SQL Structure**: Ensure proper SQL syntax - ALL columns must be in the SELECT clause BEFORE the FROM clause
   - **Schema Validation**: The schema provided includes important notes and column descriptions - READ THEM CAREFULLY
+  - **DEMOGRAPHIC DATA**: For follower demographics (age, gender, country, city breakdowns):
+    - ✅ USE: `instagram_user_lifetime_insights` table
+    - ❌ DO NOT USE: instagram_media or instagram_media_insights tables
+    - Filter by `breakdown` field: 'age,gender', 'country', or 'city'
+    - The `value` column contains JSON-encoded demographic data
+    - Example: For city breakdown, use `WHERE breakdown = 'city'`
+    - To parse the JSON, use CROSS JOIN UNNEST or json_extract functions
+    - This is LIFETIME data (current state), not time-series
 
   ### If This is a Retry
 
