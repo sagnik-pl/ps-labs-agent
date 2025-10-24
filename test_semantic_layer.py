@@ -278,10 +278,11 @@ async def send_query_and_display_response(
         # Routing decision
         if "routing_decision" in metadata:
             routing = metadata["routing_decision"]
-            print()
-            print_section("Routing Decision:")
-            print(f"  Agent: {routing.get('agent', 'N/A')}")
-            print(f"  Confidence: {routing.get('confidence', 'N/A')}")
+            if routing:  # Only display if routing is not None
+                print()
+                print_section("Routing Decision:")
+                print(f"  Agent: {routing.get('agent', 'N/A')}")
+                print(f"  Confidence: {routing.get('confidence', 'N/A')}")
 
         # SQL information
         if "sql_query" in metadata:
