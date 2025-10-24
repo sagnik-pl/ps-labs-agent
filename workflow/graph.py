@@ -60,13 +60,13 @@ def create_agent_workflow(checkpointer=None):
     workflow.add_edge(START, "planner")
 
     # planner -> router OR parallel_comparison OR END (for early exits like out-of-scope/needs-clarification)
-    def route_from_planner(state: AgentState) -> Literal["router", "parallel_comparison", "END"]:
+    def route_from_planner(state: AgentState):
         """Determine next step from planner: router for normal flow, parallel_comparison for comparisons, or END for early exits."""
         next_step = state.get("next_step", "router")
 
         # Handle early exits (out-of-scope queries, needs clarification)
         if next_step == "END":
-            return "END"  # Return the string "END" to match the edge mapping
+            return END  # Return LangGraph's END constant directly
 
         # Handle comparison queries
         if next_step == "parallel_execute":
@@ -81,7 +81,7 @@ def create_agent_workflow(checkpointer=None):
         {
             "router": "router",
             "parallel_comparison": "parallel_comparison",
-            "END": END
+            END: END  # Use END constant as key to match return value
         }
     )
 

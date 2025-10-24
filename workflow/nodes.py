@@ -52,7 +52,9 @@ class WorkflowNodes:
 
         if not data_check['available']:
             # User is asking for unavailable data - return early with helpful message
+            # IMPORTANT: Preserve existing state to maintain user_id, conversation_id, etc.
             return {
+                **state,  # Spread existing state to preserve required fields
                 "execution_plan": {
                     "type": "out_of_scope",
                     "message": data_check['suggestion'],
@@ -61,7 +63,7 @@ class WorkflowNodes:
                 },
                 "next_step": "END",  # Skip rest of workflow
                 "final_response": data_check['suggestion'],  # Set for API response
-                "messages": [AIMessage(content=data_check['suggestion'])]
+                "messages": state.get("messages", []) + [AIMessage(content=data_check['suggestion'])]
             }
 
         # ========== CHECK 2: Ambiguous Query Detection ==========
@@ -80,7 +82,9 @@ class WorkflowNodes:
 
             formatted_message = f"{question}\n\n" + "\n".join(options_list)
 
+            # IMPORTANT: Preserve existing state to maintain user_id, conversation_id, etc.
             return {
+                **state,  # Spread existing state to preserve required fields
                 "execution_plan": {
                     "type": "needs_clarification",
                     "message": formatted_message,
@@ -90,7 +94,7 @@ class WorkflowNodes:
                 },
                 "next_step": "END",  # Wait for user to provide more specific query
                 "final_response": formatted_message,  # Set for API response
-                "messages": [AIMessage(content=formatted_message)]
+                "messages": state.get("messages", []) + [AIMessage(content=formatted_message)]
             }
 
         # ========== CHECK 3: Comparison Query Detection ==========
