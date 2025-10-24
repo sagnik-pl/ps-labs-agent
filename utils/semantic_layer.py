@@ -821,13 +821,59 @@ class SemanticLayer:
 
         # Additional heuristics for ambiguous queries
         vague_phrases = [
-            "how is", "how are", "how's",
+            "how is", "how are", "how's", "hows",
             "what about", "tell me about",
             "show me", "give me",
             "analyze", "check"
         ]
 
         has_vague_phrase = any(phrase in query_lower for phrase in vague_phrases)
+
+        # ========== Check for vague platform status queries ==========
+        # Queries like "how's insta?", "how's instagram?", "how's meta ads?"
+        platform_keywords = [
+            'instagram', 'insta', 'ig',
+            'meta ads', 'meta', 'facebook ads', 'fb ads',
+            'social media', 'social'
+        ]
+
+        mentions_platform = any(platform in query_lower for platform in platform_keywords)
+
+        # If it's a vague status query about a platform (e.g., "how's insta?", "how is instagram?")
+        if has_vague_phrase and mentions_platform and is_very_short:
+            # User is asking "how's [platform]?" without specifying what they want to know
+            clarification_data = {
+                "question": "I can help analyze your Instagram performance! What would you like to know specifically?",
+                "options": [
+                    {
+                        "label": "Recent Posts Performance",
+                        "description": "Engagement, reach, and saves for your latest posts",
+                        "focus": "recent_posts"
+                    },
+                    {
+                        "label": "Overall Reach & Engagement",
+                        "description": "Total reach, impressions, and engagement rates over last 30 days",
+                        "focus": "reach_engagement_30d"
+                    },
+                    {
+                        "label": "Top Performing Content",
+                        "description": "Best-performing posts and content types",
+                        "focus": "top_content"
+                    },
+                    {
+                        "label": "Growth Trends",
+                        "description": "How metrics are changing over time (growing or declining)",
+                        "focus": "trends"
+                    }
+                ]
+            }
+
+            return {
+                'is_ambiguous': True,
+                'ambiguous_terms': ['platform_status'],
+                'clarification_question': clarification_data['question'],
+                'options': clarification_data['options']
+            }
 
         # Query is ambiguous if:
         # 1. Contains ambiguous term AND is short/vague, OR
