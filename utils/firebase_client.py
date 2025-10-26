@@ -358,20 +358,40 @@ class FirebaseClient:
             raise
 
     def get_context_summary(self, user_id: str, conversation_id: str) -> str:
-        """Get a summary of conversation context for agent use."""
+        """
+        Get a compressed summary of conversation context for agent use.
+
+        Only includes user queries (full) and assistant responses (truncated to 200 chars).
+        This prevents token explosion from large data responses while preserving conversational context.
+
+        Returns:
+            Formatted context string with last 10 message turns (compressed)
+        """
         messages = self.get_conversation_history(user_id, conversation_id)
 
         if not messages:
             return "No previous conversation history."
 
-        # Format last N messages for context
-        context_messages = messages[-5:]  # Last 5 messages
+        # Format last N messages for context (increased from 5 to 10 due to compression)
+        context_messages = messages[-10:]  # Last 10 messages (user + assistant pairs)
         formatted = []
 
         for msg in context_messages:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            formatted.append(f"{role}: {content}")
+
+            if role == "user":
+                # Keep full user query (users don't write essays)
+                formatted.append(f"User: {content}")
+            elif role == "assistant":
+                # Truncate assistant response to first 200 chars (skip data dumps)
+                # Assistant responses often contain large SQL results, data tables, etc.
+                summary = content[:200] + "..." if len(content) > 200 else content
+                formatted.append(f"Assistant: {summary}")
+            else:
+                # Fallback for any other role
+                summary = content[:200] + "..." if len(content) > 200 else content
+                formatted.append(f"{role}: {summary}")
 
         return "\n".join(formatted)
 

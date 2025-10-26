@@ -50,8 +50,9 @@ prompt: |
 
   2. **Table/Column Existence**
      - Do all tables exist?
-     - Do all columns exist in their respective tables?
-     - Check against provided schema
+     - **IMPORTANT**: Trust the semantic layer schema provided - if a column is listed in the schema, it EXISTS
+     - The semantic layer schema is the authoritative source for column definitions
+     - Only flag column errors if the column is definitively NOT in the provided schema
 
   3. **SQL Syntax**
      - Valid SQL syntax?
@@ -146,9 +147,11 @@ prompt: |
   ## Special Instructions
 
   - If query is missing user_id filter, this is ALWAYS invalid (critical security issue)
+  - **Column validation**: The semantic layer schema is the authoritative source. If a column appears in the provided schema, it EXISTS and is VALID. Do not second-guess the schema.
   - If table/column names don't match schema, provide exact correct names
   - If syntax error, point to specific issue and correction
   - Consider both correctness AND user's intent
   - If query is technically correct but inefficient, still mark valid but add warnings
+  - **Be less strict**: Focus validation on critical issues (security, syntax errors, logic errors) rather than being overly conservative about column existence
 
   Your validation protects data integrity and ensures query quality.

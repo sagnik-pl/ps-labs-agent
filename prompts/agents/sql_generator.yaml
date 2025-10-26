@@ -46,6 +46,10 @@ prompt: |
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
   - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
     join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`
+  - **DISTINCT for JOINs**: Use `SELECT DISTINCT` when JOINs might produce duplicate rows:
+    - ✅ Use when joining multiple tables (e.g., media + insights + user data)
+    - ✅ Use when selecting entity-level data (e.g., media details) with joined metrics
+    - ❌ Skip when aggregating (SUM, COUNT, AVG) - duplicates handled by GROUP BY
   - **Column Names**: CRITICAL - Refer to the schema carefully:
     - ✅ Use: `i.saved` (NOT `i.saves` - common mistake!)
     - Schema shows exact column names and types
@@ -84,7 +88,7 @@ prompt: |
 
   **Example correct structure**:
   ```
-  SELECT
+  SELECT DISTINCT
     m.column1,
     m.column2,
     i.metric1,

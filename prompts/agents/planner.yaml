@@ -32,7 +32,31 @@ prompt: |
   ## Task
 
   User Query: {query}
-  Conversation Context: {context}
+
+  ## Conversation Context
+
+  {context}
+
+  ### IMPORTANT: Understanding Temporal References in Context
+
+  When analyzing the user query, pay careful attention to temporal references that relate to previous conversation:
+
+  - **"before that"** / **"prior to that"** → Refers to the time period BEFORE the one mentioned in the previous query
+    Example: If previous query was "last 30 days" and current is "what about 30 days before that?", interpret as days 31-60
+
+  - **"compared to"** / **"vs"** → User wants comparison between current period and a different period
+    Example: "How does this compare to the previous month?" means compare the period discussed vs one month earlier
+
+  - **"the change from"** → User is asking about delta/difference between two periods
+    Example: "What was the change from last month?" when previous query was about "this month"
+
+  - **"that time"** / **"back then"** → Refers to the specific time period discussed in previous message
+
+  **How to use context:**
+  1. Read the conversation context carefully to understand what time periods were previously discussed
+  2. If user uses relative temporal references, resolve them against the previous context
+  3. Extract the actual date ranges or periods from previous assistant responses if needed
+  4. When in doubt about ambiguous time references, look for clues in the conversation history
 
   Create an execution plan. Respond with ONLY a JSON object:
   {{

@@ -340,11 +340,38 @@ async def process_query_with_progress(
                             "retry_count": node_output.get("sql_retry_count", 0),
                         })
                     elif node_name == "sql_validator":
+                        # Extract validation data from nested sql_validation dict
+                        sql_validation = node_output.get("sql_validation", {})
                         await manager.send_debug(session_id, "sql_validator", {
-                            "is_valid": node_output.get("sql_valid", False),
-                            "validation_score": node_output.get("validation_score", 0),
-                            "feedback": node_output.get("validation_feedback", ""),
-                            "next_step": node_output.get("next", ""),
+                            "is_valid": sql_validation.get("is_valid", False),
+                            "validation_score": sql_validation.get("validation_score", 0),
+                            "feedback": sql_validation.get("feedback", ""),
+                            "reasoning": sql_validation.get("reasoning", ""),
+                            "next_step": node_output.get("next_step", ""),
+                        })
+                    elif node_name == "sql_executor":
+                        # Show SQL execution results
+                        query_result = node_output.get("query_result", {})
+                        await manager.send_debug(session_id, "sql_executor", {
+                            "row_count": len(query_result.get("rows", [])),
+                            "columns": query_result.get("columns", []),
+                            "sample_rows": query_result.get("rows", [])[:3],  # First 3 rows as sample
+                            "execution_time_ms": query_result.get("execution_time_ms", 0),
+                        })
+                    elif node_name == "data_interpreter":
+                        # Show data interpretation
+                        await manager.send_debug(session_id, "data_interpreter", {
+                            "interpretation": node_output.get("data_interpretation", ""),
+                            "interpretation_length": len(node_output.get("data_interpretation", "")),
+                        })
+                    elif node_name == "interpretation_validator":
+                        # Show interpretation validation results
+                        interpretation_validation = node_output.get("interpretation_validation", {})
+                        await manager.send_debug(session_id, "interpretation_validator", {
+                            "is_valid": interpretation_validation.get("is_valid", False),
+                            "validation_score": interpretation_validation.get("validation_score", 0),
+                            "feedback": interpretation_validation.get("feedback", ""),
+                            "next_step": node_output.get("next_step", ""),
                         })
 
                     # Store the latest result

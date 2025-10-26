@@ -277,6 +277,45 @@ async def send_query_and_display_response(
                     if next_step:
                         print(f"     {Colors.YELLOW}Next:{Colors.END} {next_step}")
 
+                elif node == "sql_executor":
+                    row_count = debug_data.get("row_count", 0)
+                    columns = debug_data.get("columns", [])
+                    sample_rows = debug_data.get("sample_rows", [])
+                    exec_time = debug_data.get("execution_time_ms", 0)
+
+                    print(f"     {Colors.YELLOW}Query Results:{Colors.END}")
+                    print(f"       Rows: {row_count}")
+                    print(f"       Columns: {columns}")
+                    print(f"       Execution time: {exec_time}ms")
+
+                    if sample_rows:
+                        print(f"     {Colors.YELLOW}Sample Data (first 3 rows):{Colors.END}")
+                        for i, row in enumerate(sample_rows, 1):
+                            print(f"       Row {i}: {row}")
+
+                elif node == "data_interpreter":
+                    interpretation = debug_data.get("interpretation", "")
+                    interpretation_len = debug_data.get("interpretation_length", 0)
+
+                    print(f"     {Colors.YELLOW}Interpretation ({interpretation_len} chars):{Colors.END}")
+                    # Show first 300 characters as preview
+                    preview = interpretation[:300] + ("..." if len(interpretation) > 300 else "")
+                    for line in preview.split('\n'):
+                        print(f"       {line}")
+
+                elif node == "interpretation_validator":
+                    is_valid = debug_data.get("is_valid", False)
+                    feedback = debug_data.get("feedback", "")
+                    score = debug_data.get("validation_score", 0)
+                    next_step = debug_data.get("next_step", "")
+
+                    status = f"{Colors.GREEN}✅ VALID{Colors.END}" if is_valid else f"{Colors.RED}❌ INVALID{Colors.END}"
+                    print(f"     Validation: {status} (score: {score}/100)")
+                    if feedback:
+                        print(f"     {Colors.YELLOW}Feedback:{Colors.END} {feedback}")
+                    if next_step:
+                        print(f"     {Colors.YELLOW}Next:{Colors.END} {next_step}")
+
             else:
                 # Unknown message type - show full data for debugging
                 print_warning(f"Unknown message type: {msg_type}")
