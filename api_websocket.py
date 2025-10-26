@@ -67,6 +67,7 @@ class ConnectionManager:
 
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.debug_mode: Dict[str, bool] = {}  # Track debug mode per session
 
     async def connect(self, session_id: str, websocket: WebSocket):
         """Accept and store WebSocket connection."""
@@ -79,6 +80,8 @@ class ConnectionManager:
         if session_id in self.active_connections:
             del self.active_connections[session_id]
             logger.info(f"WebSocket disconnected: {session_id[:12]}...")
+        if session_id in self.debug_mode:
+            del self.debug_mode[session_id]
 
     async def send_message(self, session_id: str, message: dict):
         """Send message to specific session."""
@@ -102,6 +105,19 @@ class ConnectionManager:
         """Send error message."""
         event = ProgressEvent.error(error, details)
         event["timestamp"] = datetime.now(timezone.utc).isoformat()
+        await self.send_message(session_id, event)
+
+    async def send_debug(self, session_id: str, node_name: str, debug_data: dict):
+        """Send debug information (only if debug_mode enabled)."""
+        if not self.debug_mode.get(session_id, False):
+            return
+
+        event = {
+            "type": "debug",
+            "node": node_name,
+            "data": debug_data,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
         await self.send_message(session_id, event)
 
 
@@ -130,12 +146,18 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, session_id: str
                 # User sent a query
                 query = data.get("query")
                 conversation_id = data.get("conversation_id", session_id)
+                debug_mode = data.get("debug_mode", False)
+
+                # Store debug_mode for this session
+                manager.debug_mode[session_id] = debug_mode
 
                 if not query:
                     logger.warning("No query provided in message")
                     continue
 
                 logger.info(f"Processing query: '{query[:60]}...'")  # Truncate for logs
+                if debug_mode:
+                    logger.info(f"🔍 Debug mode ENABLED for session {session_id[:12]}...")
 
                 # Send started event
                 await manager.send_message(
@@ -305,6 +327,25 @@ async def process_query_with_progress(
 
                     logger.info(f"⚙️ Workflow node: {node_name} (retry: {retry_count})")
                     await manager.send_progress(session_id, node_name, retry_count)
+
+                    # Send debug info for specific nodes
+                    if node_name == "planner":
+                        await manager.send_debug(session_id, "planner", {
+                            "execution_plan": node_output.get("metadata", {}).get("execution_plan", {}),
+                            "routing_decision": node_output.get("metadata", {}).get("routing_decision", {}),
+                        })
+                    elif node_name == "sql_generator":
+                        await manager.send_debug(session_id, "sql_generator", {
+                            "generated_sql": node_output.get("generated_sql", ""),
+                            "retry_count": node_output.get("sql_retry_count", 0),
+                        })
+                    elif node_name == "sql_validator":
+                        await manager.send_debug(session_id, "sql_validator", {
+                            "is_valid": node_output.get("sql_valid", False),
+                            "validation_score": node_output.get("validation_score", 0),
+                            "feedback": node_output.get("validation_feedback", ""),
+                            "next_step": node_output.get("next", ""),
+                        })
 
                     # Store the latest result
                     final_result = node_output

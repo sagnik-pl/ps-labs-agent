@@ -160,12 +160,16 @@ async def send_query_and_display_response(
     """
     print_header(f"QUERY: {query}")
 
-    # Send query
-    await websocket.send(json.dumps({
+    # Send query with debug_mode enabled
+    message_to_send = {
         "type": "query",
         "query": query,
-        "conversation_id": conversation_id
-    }))
+        "conversation_id": conversation_id,
+        "debug_mode": True  # Enable debug output
+    }
+
+    print_info(f"Sending message: {json.dumps(message_to_send, indent=2)}")
+    await websocket.send(json.dumps(message_to_send))
 
     print_section("Backend Response Stream:")
     print()
@@ -223,6 +227,55 @@ async def send_query_and_display_response(
                 title = metadata_data.get("title", "Untitled")
                 date = metadata_data.get("date", "")
                 print_info(f"New conversation: '{title}' ({date})")
+
+            elif msg_type == "debug":
+                # Debug information from backend
+                debug_data = data.get("data", {})
+                node = data.get("node", "unknown")
+
+                print()
+                print(f"  {Colors.CYAN}{Colors.BOLD}🔍 DEBUG - {node}{Colors.END}")
+
+                if node == "planner":
+                    exec_plan = debug_data.get("execution_plan", {})
+                    routing = debug_data.get("routing_decision", {})
+
+                    if exec_plan:
+                        print(f"     {Colors.YELLOW}Execution Plan:{Colors.END}")
+                        print(f"       Type: {exec_plan.get('type', 'N/A')}")
+                        if exec_plan.get('platforms'):
+                            print(f"       Platforms: {exec_plan.get('platforms')}")
+                        if exec_plan.get('metrics'):
+                            print(f"       Metrics: {exec_plan.get('metrics')}")
+
+                    if routing:
+                        print(f"     {Colors.YELLOW}Routing:{Colors.END}")
+                        print(f"       Agent: {routing.get('agent', 'N/A')}")
+                        print(f"       Confidence: {routing.get('confidence', 'N/A')}")
+
+                elif node == "sql_generator":
+                    sql = debug_data.get("generated_sql", "")
+                    retry = debug_data.get("retry_count", 0)
+                    retry_str = f" (retry {retry})" if retry > 0 else ""
+
+                    print(f"     {Colors.YELLOW}Generated SQL{retry_str}:{Colors.END}")
+                    print(f"     ```sql")
+                    for line in sql.split('\n'):
+                        print(f"     {line}")
+                    print(f"     ```")
+
+                elif node == "sql_validator":
+                    is_valid = debug_data.get("is_valid", False)
+                    feedback = debug_data.get("feedback", "")
+                    score = debug_data.get("validation_score", 0)
+                    next_step = debug_data.get("next_step", "")
+
+                    status = f"{Colors.GREEN}✅ VALID{Colors.END}" if is_valid else f"{Colors.RED}❌ INVALID{Colors.END}"
+                    print(f"     Validation: {status} (score: {score}/100)")
+                    if feedback:
+                        print(f"     {Colors.YELLOW}Feedback:{Colors.END} {feedback}")
+                    if next_step:
+                        print(f"     {Colors.YELLOW}Next:{Colors.END} {next_step}")
 
             else:
                 # Unknown message type - show full data for debugging
