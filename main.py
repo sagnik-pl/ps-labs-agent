@@ -75,6 +75,8 @@ def main():
                 "interpretation_retry_count": 0,
                 "sql_retry_count": 0,
                 "decomposition_retry_count": 0,  # For multi-intent query decomposition
+                "sub_query_results": None,  # Results from multi-intent sub-query execution
+                "sub_query_execution_log": None,  # Execution tracking for multi-intent queries
             }
 
             # Process query with LangGraph workflow

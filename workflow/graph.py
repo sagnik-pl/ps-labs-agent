@@ -13,14 +13,31 @@ def create_agent_workflow(checkpointer=None):
     Create the LangGraph agent workflow.
 
     Workflow:
-    START → planner ──→ query_assessment ──→ router → sql_generator → sql_validator → sql_executor → data_interpreter
-              ↓              ↓       ↑                     ↑              ↓                              ↓
-              ↓              ↓       └─── retry ───────────┘              └─ retry_sql ──┘                  interpretation_validator
-              ↓              ↓       (if incomplete)                                                                ↓        ↓
-              ↓              ↓                                                                         retry_interpretation  output_formatter → interpreter → END
-              ↓              └─→ router (single-intent, skip assessment)                                     ↑                     ↑                 ↓
-              ↓                                                                                              └─────────────────────┘                 └──────────┘
-              └─→ END (out-of-scope / needs-clarification / greetings)
+    START → planner ──→ query_assessment ──→ router ──→ [single OR multi-intent execution]
+              ↓              ↓       ↑                  │
+              ↓              ↓       └─ retry ──────────┤
+              ↓              ↓       (if incomplete)    │
+              ↓              └─→ router ────────────────┤
+              ↓              (single-intent, skip       │
+              ↓               assessment)                │
+              └─→ END                                    │
+              (out-of-scope/needs-clarification)        │
+                                                         │
+    Single-Intent Path: ─────────────────────────────────┘
+    router → sql_generator → sql_validator → sql_executor → data_interpreter
+                   ↑              ↓
+                   └─ retry_sql ──┘
+
+    Multi-Intent Path: ───────────────────────────────────┐
+    router → multi_intent_executor → data_interpreter     │
+             └→ For each sub-query (parallel):            │
+                sql_generator → sql_validator             │
+                → sql_executor (internal)                 │
+                                                           │
+    Final Path (both converge): ───────────────────────────┘
+    data_interpreter → interpretation_validator → output_formatter → interpreter → END
+                             ↓
+                 retry_interpretation ─┘
 
     Args:
         checkpointer: Optional checkpointer for state persistence
@@ -38,6 +55,9 @@ def create_agent_workflow(checkpointer=None):
     workflow.add_node("planner", nodes.planner_node)
     workflow.add_node("query_assessment", nodes.query_assessment_node)  # Validates decomposition
     workflow.add_node("router", nodes.router_node)
+
+    # Multi-intent execution layer (parallel sub-query orchestration)
+    workflow.add_node("multi_intent_executor", nodes.multi_intent_executor_node)
 
     # SQL generation and validation layer
     workflow.add_node("sql_generator", nodes.sql_generator_node)
@@ -104,26 +124,32 @@ def create_agent_workflow(checkpointer=None):
         }
     )
 
-    # router -> sql_generator (for data analytics queries)
-    def route_to_agent(state: AgentState) -> str:
+    # router -> multi_intent_executor OR sql_generator (based on query type)
+    def route_to_executor(state: AgentState) -> str:
         """
-        Route to appropriate node based on query type.
+        Route to appropriate executor based on query classification.
 
-        Currently only data analytics queries are supported, which route to sql_generator.
-        Future: Add routing logic for other specialized agents here.
+        - Multi-intent queries → multi_intent_executor (orchestrated parallel execution)
+        - Single-intent queries → sql_generator (direct SQL pipeline)
         """
-        # Currently only data analytics queries supported
-        # All queries route through the SQL pipeline: sql_generator → validator → executor
+        routing_decision = state.get("routing_decision", {})
+        next_step = routing_decision.get("next_step", "sql_generator")
+
+        if next_step == "multi_intent_executor":
+            return "multi_intent_executor"
         return "sql_generator"
 
     workflow.add_conditional_edges(
         "router",
-        route_to_agent,
+        route_to_executor,
         {
+            "multi_intent_executor": "multi_intent_executor",
             "sql_generator": "sql_generator",
-            # Future: add more agent routes here
         },
     )
+
+    # multi_intent_executor -> data_interpreter (skip SQL pipeline, already executed)
+    workflow.add_edge("multi_intent_executor", "data_interpreter")
 
     # sql_generator -> sql_validator
     workflow.add_edge("sql_generator", "sql_validator")

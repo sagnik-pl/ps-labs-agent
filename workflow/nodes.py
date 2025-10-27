@@ -317,10 +317,10 @@ class WorkflowNodes:
 
     def router_node(self, state: AgentState) -> Dict[str, Any]:
         """
-        Route query to SQL generation pipeline.
+        Route query based on classification.
 
-        Currently all queries route to sql_generator for data analytics.
-        Future: Add routing logic for other query types (creative, competitor analysis, etc.).
+        - Single-intent queries → sql_generator (direct SQL execution)
+        - Multi-intent queries → multi_intent_executor (orchestrated parallel execution)
 
         Args:
             state: Current agent state
@@ -331,26 +331,367 @@ class WorkflowNodes:
         plan = state.get("plan", {})
         query = state["query"]
 
-        # Get the first step from plan
-        steps = plan.get("steps", [])
+        # Check query classification
+        classification = state.get("query_classification", {})
+        query_type = classification.get("type", "single_intent")
 
-        # Extract reasoning from plan if available
-        if steps:
-            reasoning = steps[0].get("action", "Execute data query via SQL pipeline")
+        if query_type == "multi_intent":
+            # Multi-intent: route to orchestrator for parallel sub-query execution
+            decomposition = state.get("query_decomposition", {})
+            sub_query_count = len(decomposition.get("sub_queries", []))
+
+            routing_decision = {
+                "query_type": "multi_intent_data_analytics",
+                "reasoning": f"Multi-intent query with {sub_query_count} sub-queries requiring orchestrated execution",
+                "next_step": "multi_intent_executor",
+                "workflow_path": "multi_intent_sql_pipeline",
+            }
+
+            return {
+                "routing_decision": routing_decision,
+                "next_step": "multi_intent_executor",
+            }
         else:
-            reasoning = "Default routing to SQL pipeline"
+            # Single-intent: existing routing to SQL generator
+            steps = plan.get("steps", [])
+            reasoning = steps[0].get("action", "Execute data query via SQL pipeline") if steps else "Default routing to SQL pipeline"
 
-        routing_decision = {
-            "query_type": "data_analytics",  # Type of query being handled
-            "reasoning": reasoning,
-            "next_step": "sql_generator",
-            "workflow_path": "sql_pipeline",  # Which workflow path we're taking
-        }
+            routing_decision = {
+                "query_type": "data_analytics",
+                "reasoning": reasoning,
+                "next_step": "sql_generator",
+                "workflow_path": "sql_pipeline",
+            }
+
+            return {
+                "routing_decision": routing_decision,
+                "next_step": routing_decision["next_step"],
+            }
+
+    def multi_intent_executor_node(self, state: AgentState) -> Dict[str, Any]:
+        """
+        Execute multiple sub-queries with parallel execution for independent queries.
+
+        Groups queries by execution_order (dependency layers).
+        Within each layer, executes queries in parallel using ThreadPoolExecutor.
+        Between layers, executes sequentially to respect dependencies.
+
+        Each sub-query goes through full pipeline:
+        sql_generator_node → sql_validator_node → sql_executor_node
+
+        Example:
+            Layer 1: [sq_1, sq_4] execute in parallel (both order=1, no deps)
+            Layer 2: [sq_2, sq_3] execute in parallel (both order=2, depend on sq_1)
+
+        Args:
+            state: Current state with query_decomposition
+
+        Returns:
+            Updated state with aggregated results
+        """
+        import logging
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+
+        logger = logging.getLogger(__name__)
+
+        # Extract decomposition
+        decomposition = state.get("query_decomposition", {})
+        sub_queries = decomposition.get("sub_queries", [])
+        original_query = decomposition.get("original_query", state["query"])
+        original_goal = decomposition.get("original_goal", state["query"])
+
+        total_queries = len(sub_queries)
+        logger.info(f"🔀 Executing {total_queries} sub-queries with parallel optimization")
+
+        # Step 1: Group queries by execution order (dependency layers)
+        layers = self._group_queries_by_execution_order(sub_queries)
+        logger.info(f"📊 Organized into {len(layers)} execution layers")
+
+        # Step 2: Execute each layer (sequential between layers, parallel within layer)
+        sub_results = {}
+        execution_log = []
+        start_time = time.time()
+
+        for layer_num, layer_queries in enumerate(layers, 1):
+            layer_size = len(layer_queries)
+            logger.info(f"🚀 Layer {layer_num}: Executing {layer_size} queries in parallel")
+            layer_start = time.time()
+
+            # Execute this layer's queries in parallel
+            with ThreadPoolExecutor(max_workers=layer_size) as executor:
+                # Submit all queries in this layer
+                future_to_query = {}
+                for sq in layer_queries:
+                    future = executor.submit(
+                        self._execute_single_sub_query,
+                        sq,
+                        state,
+                        sub_results  # Pass existing results for dependency context
+                    )
+                    future_to_query[future] = sq
+
+                # Collect results as they complete
+                for future in as_completed(future_to_query):
+                    sq = future_to_query[future]
+                    sq_id = sq["id"]
+
+                    try:
+                        result = future.result()
+                        sub_results[sq_id] = result
+
+                        status_icon = "✅" if result["execution_status"] == "success" else "❌"
+                        logger.info(f"{status_icon} {sq_id} completed")
+
+                        # Log execution
+                        execution_log.append({
+                            "order": len(execution_log) + 1,
+                            "layer": layer_num,
+                            "sub_query_id": sq_id,
+                            "question": sq["question"],
+                            "dependencies": sq.get("dependencies", []),
+                            "status": result["execution_status"]
+                        })
+
+                    except Exception as e:
+                        logger.error(f"❌ {sq_id} failed: {str(e)}")
+                        sub_results[sq_id] = {
+                            "id": sq_id,
+                            "question": sq["question"],
+                            "intent": sq["intent"],
+                            "sql": "",
+                            "data": f"Error: {str(e)}",
+                            "execution_status": "error",
+                        }
+
+            layer_duration = time.time() - layer_start
+            logger.info(f"✅ Layer {layer_num} completed in {layer_duration:.2f}s")
+
+        total_duration = time.time() - start_time
+        logger.info(f"✅ All {total_queries} sub-queries completed in {total_duration:.2f}s")
+
+        # Step 3: Aggregate results
+        aggregated_data = self._aggregate_sub_query_results(
+            sub_results,
+            original_query,
+            original_goal
+        )
+
+        # Calculate parallelization benefit
+        successful_count = len([r for r in sub_results.values() if r["execution_status"] == "success"])
+        failed_count = len([r for r in sub_results.values() if r["execution_status"] == "error"])
 
         return {
-            "routing_decision": routing_decision,
-            "next_step": routing_decision["next_step"],
+            "user_id": state["user_id"],
+            "query": original_query,
+            "sub_query_results": sub_results,
+            "sub_query_execution_log": execution_log,
+            "raw_data": aggregated_data,
+            "execution_status": "success" if failed_count == 0 else "partial_success",
+            "metadata": {
+                **state.get("metadata", {}),
+                "multi_intent_execution": {
+                    "total_sub_queries": total_queries,
+                    "successful": successful_count,
+                    "failed": failed_count,
+                    "execution_layers": len(layers),
+                    "total_duration_seconds": round(total_duration, 2),
+                    "parallel_execution": True
+                }
+            },
+            "messages": state.get("messages", []) + [
+                AIMessage(content=f"Executed {total_queries} sub-queries in {total_duration:.1f}s (parallel)")
+            ]
         }
+
+    def _group_queries_by_execution_order(self, sub_queries: List[Dict]) -> List[List[Dict]]:
+        """
+        Group sub-queries by execution_order for layer-by-layer parallel execution.
+
+        Returns:
+            List of layers, where each layer is a list of queries that can run in parallel.
+
+        Example:
+            Input: [
+                {id: "sq_1", execution_order: 1, ...},
+                {id: "sq_4", execution_order: 1, ...},
+                {id: "sq_2", execution_order: 2, ...},
+                {id: "sq_3", execution_order: 2, ...}
+            ]
+            Output: [
+                [{id: "sq_1", ...}, {id: "sq_4", ...}],  # Layer 1
+                [{id: "sq_2", ...}, {id: "sq_3", ...}]   # Layer 2
+            ]
+        """
+        from collections import defaultdict
+
+        # Group by execution order
+        order_groups = defaultdict(list)
+        for sq in sub_queries:
+            order = sq.get("execution_order", 1)
+            order_groups[order].append(sq)
+
+        # Sort by order and return as list of layers
+        sorted_orders = sorted(order_groups.keys())
+        return [order_groups[order] for order in sorted_orders]
+
+    def _execute_single_sub_query(
+        self,
+        sq: Dict,
+        parent_state: Dict,
+        existing_results: Dict
+    ) -> Dict:
+        """
+        Execute a single sub-query through the full SQL pipeline.
+
+        This method runs in a separate thread for parallel execution.
+        Calls sql_generator_node → sql_validator_node → sql_executor_node.
+
+        Args:
+            sq: Sub-query definition with id, question, intent, dependencies
+            parent_state: Original state from multi_intent_executor
+            existing_results: Results from already-executed sub-queries (for dependencies)
+
+        Returns:
+            Result dict for this sub-query
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        sq_id = sq["id"]
+        sq_question = sq["question"]
+        sq_intent = sq["intent"]
+        sq_deps = sq.get("dependencies", [])
+
+        try:
+            # Step 1: Get dependency context
+            dependency_context = self._get_dependency_context(sq_deps, existing_results)
+
+            # Step 2: Create temporary state for this sub-query
+            temp_state = {
+                "user_id": parent_state["user_id"],
+                "conversation_id": parent_state["conversation_id"],
+                "query": sq_question,  # Use sub-query question as the query
+                "context": parent_state.get("context", "") + "\n\n" + dependency_context,
+                "user_profile": parent_state.get("user_profile"),
+                "messages": parent_state.get("messages", []),
+                "metadata": parent_state.get("metadata", {}),
+                "needs_retry": False,
+                "retry_count": 0,
+                "sql_retry_count": 0,
+            }
+
+            # Step 3: Execute SQL pipeline
+            # 3a. SQL Generator
+            gen_result = self.sql_generator_node(temp_state)
+            temp_state.update(gen_result)
+
+            # 3b. SQL Validator
+            val_result = self.sql_validator_node(temp_state)
+            temp_state.update(val_result)
+
+            # 3c. Handle validation retry if needed
+            if temp_state.get("next_step") == "retry_sql":
+                logger.warning(f"⚠️ {sq_id} SQL validation failed, retrying...")
+                gen_result = self.sql_generator_node(temp_state)
+                temp_state.update(gen_result)
+                val_result = self.sql_validator_node(temp_state)
+                temp_state.update(val_result)
+
+            # 3d. SQL Executor
+            exec_result = self.sql_executor_node(temp_state)
+            temp_state.update(exec_result)
+
+            # Step 4: Return result
+            return {
+                "id": sq_id,
+                "question": sq_question,
+                "intent": sq_intent,
+                "sql": temp_state.get("generated_sql", ""),
+                "data": temp_state.get("raw_data", ""),
+                "execution_status": temp_state.get("execution_status", "success"),
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Error executing {sq_id}: {str(e)}")
+            return {
+                "id": sq_id,
+                "question": sq_question,
+                "intent": sq_intent,
+                "sql": "",
+                "data": f"Error: {str(e)}",
+                "execution_status": "error",
+            }
+
+    def _get_dependency_context(self, dependencies: List[str], sub_results: Dict) -> str:
+        """
+        Extract results from dependency sub-queries to provide context.
+        Thread-safe: only reads from sub_results, doesn't modify.
+        """
+        if not dependencies:
+            return ""
+
+        context_parts = ["## Context from dependent queries:"]
+        for dep_id in dependencies:
+            if dep_id in sub_results:
+                result = sub_results[dep_id]
+                context_parts.append(f"\n**{dep_id}** - {result['question']}:")
+                context_parts.append(f"Result: {result['data'][:500]}...")  # Truncate if long
+
+        return "\n".join(context_parts)
+
+    def _aggregate_sub_query_results(
+        self,
+        sub_results: Dict,
+        original_query: str,
+        original_goal: str
+    ) -> str:
+        """
+        Combine all sub-query results into structured data for interpretation.
+        """
+        aggregated = {
+            "original_query": original_query,
+            "original_goal": original_goal,
+            "sub_query_count": len(sub_results),
+            "results": {}
+        }
+
+        for sq_id, result in sub_results.items():
+            aggregated["results"][sq_id] = {
+                "question": result["question"],
+                "intent": result["intent"],
+                "data": result["data"],
+                "status": result["execution_status"]
+            }
+
+        import json
+        return json.dumps(aggregated, indent=2)
+
+    def _format_sub_results_for_interpretation(self, sub_results: Dict) -> str:
+        """
+        Format sub-query results for the data interpreter prompt.
+
+        Args:
+            sub_results: Dictionary of sub-query results
+
+        Returns:
+            Formatted string with all sub-query results
+        """
+        formatted = []
+        for sq_id, result in sub_results.items():
+            status_icon = "✅" if result["execution_status"] == "success" else "❌"
+            formatted.append(f"\n{status_icon} **{sq_id}**: {result['question']}")
+            formatted.append(f"   Intent: {result['intent']}")
+            formatted.append(f"   Status: {result['execution_status']}")
+
+            # Truncate data if too long (keep first 800 chars)
+            data = result['data']
+            if len(data) > 800:
+                formatted.append(f"   Data: {data[:800]}... (truncated)")
+            else:
+                formatted.append(f"   Data: {data}")
+
+        return "\n".join(formatted)
 
     def query_assessment_node(self, state: AgentState) -> Dict[str, Any]:
         """
@@ -548,6 +889,10 @@ class WorkflowNodes:
         feedback = state.get("interpretation_feedback", "")
         user_profile = state.get("user_profile")
 
+        # Check if this is multi-intent query
+        sub_query_results = state.get("sub_query_results")
+        is_multi_intent = sub_query_results is not None
+
         # Format profile context for injection
         if user_profile:
             profile_context = format_profile_for_prompt(user_profile)
@@ -555,17 +900,44 @@ class WorkflowNodes:
             profile_context = "No profile information available."
 
         # Load prompt from prompt manager with e-commerce knowledge
+        prompt_variables = {
+            "query": query,
+            "raw_data": raw_data,
+            "context": context,
+            "feedback": feedback or "No previous feedback",
+            "profile_context": profile_context,
+            "user_id": state.get("user_id", "unknown")
+        }
+
         prompt = self.prompt_manager.get_agent_prompt(
             "data_interpreter",
-            variables={
-                "query": query,
-                "raw_data": raw_data,
-                "context": context,
-                "feedback": feedback or "No previous feedback",
-                "profile_context": profile_context,
-                "user_id": state.get("user_id", "unknown")  # Add user_id for SQL examples in knowledge bases
-            }
+            variables=prompt_variables
         )
+
+        # If multi-intent, add special section for sub-query results
+        if is_multi_intent:
+            logger.info("🧠 Interpreting multi-intent query with aggregated sub-query results")
+
+            decomposition = state.get("query_decomposition", {})
+            original_goal = decomposition.get("original_goal", query)
+
+            # Format sub-query results for interpretation
+            sub_results_formatted = self._format_sub_results_for_interpretation(sub_query_results)
+
+            prompt += f"""
+
+## Multi-Intent Query Interpretation
+
+This query required breaking down into multiple sub-queries for comprehensive analysis.
+
+**Original Goal**: {original_goal}
+
+**Sub-Query Results**:
+{sub_results_formatted}
+
+**Your Task**:
+Synthesize insights from ALL sub-queries to provide a comprehensive answer that directly addresses the original goal. Show how the pieces connect and give actionable recommendations based on the combined data.
+"""
 
         messages = [HumanMessage(content=prompt)]
         response = self.llm.invoke(messages)

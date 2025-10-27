@@ -65,6 +65,32 @@ class AgentState(TypedDict):
 
     decomposition_retry_count: int  # Number of decomposition retries
 
+    # Multi-Intent Sub-Query Execution
+    sub_query_results: Optional[Dict[str, Any]]  # Results from each sub-query in multi-intent execution
+    # {
+    #   "sq_1": {
+    #     "id": "sq_1",
+    #     "question": str,
+    #     "intent": str,
+    #     "sql": str,
+    #     "data": str,
+    #     "execution_status": "success" | "error"
+    #   },
+    #   "sq_2": { ... }
+    # }
+
+    sub_query_execution_log: Optional[List[Dict[str, Any]]]  # Execution order and status tracking
+    # [
+    #   {
+    #     "order": 1,
+    #     "layer": 1,
+    #     "sub_query_id": "sq_1",
+    #     "question": str,
+    #     "dependencies": [],
+    #     "status": "success"
+    #   }
+    # ]
+
     # Node Execution
     current_agent: Optional[str]  # Currently executing node (legacy field name, contains node name)
     agent_results: Dict[str, Any]  # Results from node execution (legacy field name)
