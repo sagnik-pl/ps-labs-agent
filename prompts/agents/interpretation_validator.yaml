@@ -29,49 +29,77 @@ prompt: |
 
   ## Validation Checklist
 
-  Evaluate the interpretation against these criteria:
+  Evaluate the interpretation against these criteria in PRIORITY ORDER:
 
-  ### 1. Correctness ✓
+  ### 1. Answers the Question ✓ (MOST CRITICAL)
+  - [ ] Directly addresses what the user asked
+  - [ ] Provides a clear answer to the original query
+  - [ ] Doesn't go off-topic or answer different questions
+  - [ ] For multi-intent queries: Addresses the original high-level goal (not just individual sub-queries)
+  - [ ] User would feel their question was answered
+
+  ### 2. Correctness ✓
   - [ ] Calculations are accurate
   - [ ] Metrics are interpreted correctly
   - [ ] No factual errors or misstatements
   - [ ] Benchmarks cited are accurate
 
-  ### 2. Context & Benchmarks ✓
-  - [ ] Provides relevant benchmarks
-  - [ ] Compares to industry standards
-  - [ ] Adds necessary context (time periods, comparisons)
-  - [ ] Explains what metrics mean in business terms
+  ### 3. Actionability ✓
+  - [ ] Provides specific, concrete recommendations
+  - [ ] Actions are prioritized
+  - [ ] Recommendations are realistic and achievable
+  - [ ] Each insight leads to a clear action
 
-  ### 3. Insights & Analysis ✓
+  ### 4. Completeness ✓
+  - [ ] Addresses all key data points from the results
+  - [ ] No critical insights missing
+  - [ ] Appropriate depth for the query
+  - [ ] Covers all aspects needed to answer the question
+
+  ### 5. Insights & Analysis ✓
   - [ ] Goes beyond just stating numbers
   - [ ] Identifies patterns, trends, or anomalies
   - [ ] Explains "why" behind the data
   - [ ] Connects data to business outcomes
 
-  ### 4. Actionability ✓
-  - [ ] Provides specific, concrete recommendations
-  - [ ] Actions are prioritized
-  - [ ] Recommendations are realistic
-  - [ ] Each insight leads to an action
-
-  ### 5. Clarity & Communication ✓
+  ### 6. Clarity & Communication ✓
   - [ ] Uses simple, clear language
   - [ ] Well-structured and scannable
   - [ ] Avoids unnecessary jargon
   - [ ] Most important findings first
 
-  ### 6. Completeness ✓
-  - [ ] Fully answers the user's query
-  - [ ] Addresses all key data points
-  - [ ] No critical insights missing
-  - [ ] Appropriate depth for the query
+  ### 7. Context & Benchmarks ✓
+  - [ ] Provides relevant benchmarks
+  - [ ] Compares to industry standards
+  - [ ] Adds necessary context (time periods, comparisons)
+  - [ ] Explains what metrics mean in business terms
 
-  ### 7. E-commerce Expertise ✓
+  ### 8. E-commerce Expertise ✓
   - [ ] Demonstrates domain knowledge
   - [ ] Uses relevant e-commerce concepts
   - [ ] Provides industry-specific insights
   - [ ] Shows understanding of business context
+
+  ## Multi-Intent Query Validation (if applicable)
+
+  {multi_intent_context}
+
+  If this is a multi-intent query (indicated above), you MUST also validate:
+
+  ### 9. Multi-Intent Synthesis Quality ✓
+  - [ ] **Stitches together** findings from multiple sub-queries (not just listing them)
+  - [ ] **Shows relationships** between findings (cause-and-effect, correlations)
+  - [ ] **Presents unified narrative** (coherent story, not separate bullet points)
+  - [ ] **Cross-references results** explicitly (e.g., "X explains why Y...")
+  - [ ] **Provides unified recommendations** that address all findings together
+  - [ ] **Answers the original goal** (not just the sub-queries)
+
+  **Multi-Intent Red Flags** (mark is_valid: false if present):
+  - Lists sub-query results separately without synthesis
+  - No connections shown between findings
+  - Treats sub-queries as independent (ignores relationships)
+  - Recommendations don't consider combined insights
+  - Reads like multiple separate answers, not one cohesive response
 
   ## Your Response
 
@@ -92,17 +120,21 @@ prompt: |
   ## Validation Logic
 
   **Set is_valid: true IF**:
-  - Quality score >= 80
-  - All critical criteria passed (Correctness, Actionability, Completeness)
+  - **Answers the question** (MOST CRITICAL)
+  - Quality score >= 75
+  - All critical criteria passed (Answers Question, Correctness, Actionability, Completeness)
+  - For multi-intent: Synthesis quality is good
   - No major red flags
 
-  **Set is_valid: false IF**:
-  - Quality score < 80
-  - Missing actionable recommendations
-  - Factual errors or wrong calculations
-  - Doesn't answer the user's query
-  - Lacks necessary context or benchmarks
-  - Too vague or generic
+  **Set is_valid: false IF (in priority order)**:
+  1. **Doesn't answer the user's query** (AUTOMATIC FAIL)
+  2. **For multi-intent: Lists findings separately without synthesis** (AUTOMATIC FAIL)
+  3. Quality score < 75
+  4. Factual errors or wrong calculations
+  5. Missing actionable recommendations
+  6. For multi-intent: No cross-references or relationships shown
+  7. Lacks necessary context or benchmarks
+  8. Too vague or generic
 
   ## Feedback Guidelines
 
@@ -112,11 +144,21 @@ prompt: |
   - Reference the knowledge you have about e-commerce
   - Prioritize the most important improvements
 
-  **Good Feedback Example**:
+  **Good Feedback Example (Single-Intent)**:
   "The interpretation states 'engagement rate is 2.5%' but doesn't compare to benchmarks.
   Add context: 'Your 2.5% engagement rate is average for retail brands (benchmark: 1-3%).
   To reach the good range (3-6%), focus on Reels which get 2x higher engagement.'
   Also missing: specific recommendations on posting frequency and content types."
+
+  **Good Feedback Example (Multi-Intent Synthesis Issue)**:
+  "This interpretation lists the sub-query findings separately without synthesis:
+  - sq_1: Engagement is 2.8%
+  - sq_2: Posted 6 times
+  - sq_3: Reach is 8K
+
+  INSTEAD, stitch them together: 'Your Instagram performance reveals a pattern: while reach remains at 8K, engagement is below benchmark (2.8% vs 3.5%), which directly correlates with inconsistent posting—only 6 posts this month versus the recommended 12-15. The solution: increase frequency to 3-4x/week to simultaneously boost engagement and reach.'
+
+  Show cause-and-effect relationships between findings and provide unified recommendations."
 
   **Bad Feedback Example**:
   "Needs more detail and better recommendations."

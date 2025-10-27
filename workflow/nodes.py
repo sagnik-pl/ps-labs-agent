@@ -1037,13 +1037,50 @@ Now synthesize the sub-query results above following these requirements.
         raw_data = state.get("raw_data", "")
         interpretation = state.get("data_interpretation", "")
 
+        # Detect if this is multi-intent query for specialized validation
+        sub_query_results = state.get("sub_query_results")
+        is_multi_intent = sub_query_results is not None
+
+        # Prepare multi-intent context for validation
+        original_goal = query
+        multi_intent_context = ""
+
+        if is_multi_intent:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("🔍 Validating MULTI-INTENT interpretation (includes synthesis quality check)")
+
+            # Get original goal from decomposition
+            decomposition = state.get("query_decomposition", {})
+            original_goal = decomposition.get("original_goal", query)
+            num_sub_queries = len(sub_query_results)
+
+            # Format context for validator
+            multi_intent_context = f"""
+**⚠️ MULTI-INTENT QUERY DETECTED**
+
+**Original User Goal**: "{original_goal}"
+**Sub-Queries Executed**: {num_sub_queries}
+
+This interpretation MUST:
+1. Synthesize findings from ALL {num_sub_queries} sub-queries into a cohesive response
+2. Show relationships and connections between findings
+3. Directly answer the original goal: "{original_goal}"
+4. NOT just list sub-query results separately
+
+Apply criterion #9 (Multi-Intent Synthesis Quality) when validating.
+"""
+        else:
+            multi_intent_context = "This is a standard single-intent query. Skip multi-intent validation (criterion #9)."
+
         # Load prompt from prompt manager
         prompt = self.prompt_manager.get_agent_prompt(
             "interpretation_validator",
             variables={
                 "query": query,
                 "raw_data": raw_data,
-                "interpretation": interpretation
+                "interpretation": interpretation,
+                "multi_intent_context": multi_intent_context
             }
         )
 
