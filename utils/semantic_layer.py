@@ -117,8 +117,30 @@ class SemanticLayer:
         metric = self.get_metric(metric_name)
         return metric.get('formula') if metric else None
 
-    def get_metric_sql(self, metric_name: str) -> Optional[str]:
-        """Get SQL expression for calculating a metric."""
+    def get_metric_sql(self, metric_name: str, table_alias: str = 'i') -> Optional[str]:
+        """
+        Get SQL expression for calculating a metric.
+
+        Now uses Python-based metric system for dynamic SQL generation.
+        Falls back to YAML-based sql_expression if Python metric not available.
+
+        Args:
+            metric_name: Name of metric (e.g., 'engagement_rate')
+            table_alias: Table alias for column references (default: 'i')
+
+        Returns:
+            SQL expression string
+        """
+        # Try Python-based metric system first (preferred)
+        try:
+            from utils.metrics import get_sql_expression
+            sql = get_sql_expression(metric_name, table_alias)
+            if sql:
+                return sql
+        except (ImportError, ValueError):
+            pass  # Fall back to YAML
+
+        # Fallback: YAML-based sql_expression (legacy)
         metric = self.get_metric(metric_name)
         return metric.get('sql_expression') if metric else None
 
@@ -146,6 +168,61 @@ class SemanticLayer:
         """Get list of related metrics for a given metric."""
         metric = self.get_metric(metric_name)
         return metric.get('related_metrics', []) if metric else []
+
+    # ========== Python-based Metric Calculation ==========
+
+    def calculate_metric(self, metric_name: str, **data) -> Optional[float]:
+        """
+        Calculate metric value in Python (for testing/validation).
+
+        Uses the Python-based metric system to calculate metrics locally
+        without SQL execution. Useful for testing, validation, and API responses.
+
+        Args:
+            metric_name: Name of metric (e.g., 'engagement_rate')
+            **data: Field values for calculation (e.g., likes=100, reach=1000)
+
+        Returns:
+            Calculated metric value or None if calculation fails
+
+        Example:
+            value = calculate_metric_python('engagement_rate',
+                                          likes=100, comments=20, saved=15,
+                                          shares=5, reach=1000)
+            # Returns: 14.0
+        """
+        try:
+            from utils.metrics import calculate_metric as calc_metric
+            return calc_metric(metric_name, **data)
+        except Exception as e:
+            logger.error(f"Error calculating {metric_name} in Python: {e}")
+            return None
+
+    def get_metric_info_extended(self, metric_name: str) -> Optional[Dict]:
+        """
+        Get metric metadata from Python-based metric system.
+
+        Args:
+            metric_name: Name of metric
+
+        Returns:
+            Dict with name, category, data_type, required_fields
+
+        Example:
+            info = get_metric_info_python('engagement_rate')
+            # Returns: {
+            #     'name': 'Engagement Rate',
+            #     'category': 'social_media',
+            #     'data_type': 'percentage',
+            #     'required_fields': ['likes', 'comments', 'saved', 'shares', 'reach']
+            # }
+        """
+        try:
+            from utils.metrics import get_metric_info
+            return get_metric_info(metric_name)
+        except Exception as e:
+            logger.warning(f"Error getting info for {metric_name}: {e}")
+            return None
 
     # ========== Schema Methods ==========
 
@@ -1079,9 +1156,9 @@ semantic_layer = SemanticLayer()
 
 # ========== Convenience Functions ==========
 
-def get_metric_sql(metric_name: str) -> Optional[str]:
+def get_metric_sql(metric_name: str, table_alias: str = 'i') -> Optional[str]:
     """Get SQL expression for a metric."""
-    return semantic_layer.get_metric_sql(metric_name)
+    return semantic_layer.get_metric_sql(metric_name, table_alias)
 
 
 def validate_column(table_name: str, column_name: str) -> bool:
