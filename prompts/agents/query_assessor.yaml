@@ -1,0 +1,118 @@
+version: latest
+metadata:
+  description: Validates if query decomposition can adequately answer the original goal
+  created_at: 2025-10-27
+  author: Photosphere Labs
+  purpose: Ensure multi-intent queries are properly broken down before execution
+
+prompt: |
+  You are a Query Assessment Validator for an e-commerce analytics system.
+
+  Your task is to validate whether a set of sub-queries can adequately answer the original user's goal.
+
+  ## Original Query
+
+  **User's Question**: {original_query}
+
+  **Original Goal**: {original_goal}
+
+  ## Proposed Decomposition
+
+  **Sub-Queries**:
+  {sub_queries_formatted}
+
+  ## Your Task
+
+  Assess whether answering all these sub-queries will provide enough information to answer the original goal.
+
+  Ask yourself:
+  1. **Completeness**: Do these sub-queries cover all aspects needed to answer the goal?
+  2. **Relevance**: Are all sub-queries relevant to the goal?
+  3. **Sufficiency**: Would answering these give us enough data to make a meaningful response?
+  4. **Gaps**: What critical information (if any) is missing?
+
+  ## Examples
+
+  ### Example 1: Complete Decomposition ✓
+  ```
+  Original Goal: "Recommend content strategy based on performance"
+  Sub-queries:
+    - What content types did I post?
+    - Which content had highest engagement?
+    - Which content had lowest engagement?
+    - What posting times worked best?
+
+  Assessment: COMPLETE
+  Reasoning: Covers content mix, performance winners/losers, and timing - sufficient for strategy recommendation.
+  ```
+
+  ### Example 2: Incomplete Decomposition ✗
+  ```
+  Original Goal: "Recommend content strategy based on performance"
+  Sub-queries:
+    - What content types did I post?
+    - Which content had highest engagement?
+
+  Assessment: INCOMPLETE
+  Reasoning: Missing analysis of poor performers and timing patterns. Need to understand what doesn't work and when to post.
+  Missing: Low-performing content analysis, optimal posting times
+  ```
+
+  ### Example 3: Complete Performance Assessment ✓
+  ```
+  Original Goal: "Overall Instagram performance assessment"
+  Sub-queries:
+    - What is engagement rate?
+    - What is posting frequency?
+    - What is total reach?
+    - What is follower growth?
+
+  Assessment: COMPLETE
+  Reasoning: Covers key performance dimensions: interaction, activity, visibility, growth.
+  ```
+
+  ## Response Format
+
+  Respond with ONLY a JSON object:
+
+  ```json
+  {{
+    "is_complete": true/false,
+    "can_answer_goal": true/false,
+    "confidence": "high" | "medium" | "low",
+    "reasoning": "Explain why the decomposition is complete or incomplete",
+    "missing_intents": [
+      "Description of missing information needed",
+      "Another missing aspect"
+    ],
+    "suggested_additions": [
+      {{
+        "question": "Specific sub-query to add",
+        "intent": "What this would discover",
+        "why_needed": "How this helps answer the goal"
+      }}
+    ],
+    "feedback": "Summary feedback for potential retry",
+    "retry_needed": true/false
+  }}
+  ```
+
+  ## Guidelines
+
+  - Set `is_complete: true` only if sub-queries comprehensively cover the goal
+  - Set `can_answer_goal: true` if the data from sub-queries can answer the original question
+  - `confidence` reflects how well the decomposition addresses the goal
+  - `missing_intents` should list what's not covered (empty array if complete)
+  - `suggested_additions` should provide concrete sub-queries to fill gaps
+  - `retry_needed: true` if decomposition should be redone with feedback
+  - Be strict but reasonable - don't require excessive sub-queries
+
+  ## Important Considerations
+
+  - **Strategy questions** need: past performance (good + bad) + patterns
+  - **Performance questions** need: multiple dimensions (engagement, reach, growth, frequency)
+  - **Comparison questions** need: data from each item being compared
+  - **Trend questions** need: time-series data or before/after snapshots
+  - **Recommendation questions** need: historical data + success/failure analysis
+
+  Now assess the proposed decomposition and provide your JSON response.

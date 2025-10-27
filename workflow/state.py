@@ -30,6 +30,41 @@ class AgentState(TypedDict):
     routing_decision: Optional[Dict[str, Any]]  # Routing decision (query type, workflow path)
     next_step: Optional[str]  # Next node to execute
 
+    # Query Classification & Decomposition (for multi-intent handling)
+    query_classification: Optional[Dict[str, Any]]  # Intent classification result
+    # {
+    #   "type": "single_intent" | "multi_intent" | "comparison",
+    #   "complexity": "simple" | "complex",
+    #   "reasoning": str,
+    #   "requires_decomposition": bool
+    # }
+
+    query_decomposition: Optional[Dict[str, Any]]  # Decomposed queries for multi-intent
+    # {
+    #   "original_query": str,
+    #   "original_goal": str,
+    #   "sub_queries": [
+    #     {
+    #       "id": str,  # e.g., "sq_1", "sq_2"
+    #       "question": str,
+    #       "intent": str,  # What this sub-query aims to find
+    #       "dependencies": List[str],  # IDs of sub-queries this depends on
+    #       "execution_order": int
+    #     }
+    #   ]
+    # }
+
+    decomposition_assessment: Optional[Dict[str, Any]]  # Validation of decomposition
+    # {
+    #   "is_complete": bool,
+    #   "can_answer_goal": bool,
+    #   "missing_intents": List[str],
+    #   "feedback": str,
+    #   "retry_needed": bool
+    # }
+
+    decomposition_retry_count: int  # Number of decomposition retries
+
     # Node Execution
     current_agent: Optional[str]  # Currently executing node (legacy field name, contains node name)
     agent_results: Dict[str, Any]  # Results from node execution (legacy field name)

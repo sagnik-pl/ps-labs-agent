@@ -72,6 +72,53 @@ class WorkflowNodes:
             "time_expressions": detected_expressions
         }
 
+    def _decompose_query(self, query: str, context: str, retry_feedback: str = "") -> Dict[str, Any]:
+        """
+        Classify query intent and decompose multi-intent queries into single-intent sub-queries.
+
+        Args:
+            query: User's query
+            context: Conversation context
+            retry_feedback: Feedback from assessment node if this is a retry
+
+        Returns:
+            Dict with classification and decomposition results
+        """
+        # Load decomposer prompt
+        prompt = self.prompt_manager.get_agent_prompt(
+            "query_decomposer",
+            variables={
+                "query": query,
+                "context": context,
+            }
+        )
+
+        # Add retry feedback if this is a retry
+        if retry_feedback:
+            prompt += f"\n\n## Feedback from Previous Attempt\n\n{retry_feedback}\n\nPlease address this feedback in your decomposition."
+
+        messages = [HumanMessage(content=prompt)]
+        response = self.llm.invoke(messages)
+
+        try:
+            result = json.loads(response.content)
+            return result
+        except json.JSONDecodeError:
+            # Fallback: treat as single-intent
+            return {
+                "classification": {
+                    "type": "single_intent",
+                    "complexity": "simple",
+                    "reasoning": "Failed to parse decomposition, treating as single-intent",
+                    "requires_decomposition": False
+                },
+                "decomposition": {
+                    "original_query": query,
+                    "original_goal": query,
+                    "sub_queries": []
+                }
+            }
+
     def planner_node(self, state: AgentState) -> Dict[str, Any]:
         """
         Create an execution plan for the user query.
@@ -177,41 +224,46 @@ class WorkflowNodes:
                 "messages": state.get("messages", []) + [AIMessage(content=formatted_message)]
             }
 
-        # ========== CHECK 3: COMPARISON DETECTION - DISABLED FOR REDESIGN ==========
-        # The comparison query detection and parallel execution logic is being rebuilt.
-        # Comparison queries will be handled through the regular SQL pipeline for now.
-        # ============================================================================
-        #
-        # comparison_check = detect_comparison_query(query)
-        #
-        # if comparison_check['is_comparison']:
-        #     logger.info(f"📊 Comparison detected: {comparison_check['comparison_type']} - {comparison_check['comparison_items']}")
-        #
-        #     # Try to split into parallel sub-queries
-        #     split_result = split_comparison_query(
-        #         original_query=query,
-        #         comparison_data=comparison_check,
-        #         user_id=state.get("user_id")
-        #     )
-        #
-        #     if split_result['can_split']:
-        #         logger.info(f"✂️ Query split into {len(split_result['sub_queries'])} parallel sub-queries")
-        #
-        #         return {
-        #             "execution_plan": {
-        #                 "type": "comparison_parallel",
-        #                 "sub_queries": split_result['sub_queries'],
-        #                 "comparison_data": comparison_check,
-        #                 "merge_strategy": split_result['merge_strategy'],
-        #                 "comparison_type": split_result['comparison_type'],
-        #                 "comparison_dimension": split_result['comparison_dimension']
-        #             },
-        #             "next_step": "parallel_execute",  # Route to parallel execution
-        #             "messages": [AIMessage(content=f"Executing parallel comparison query for {comparison_check['comparison_dimension']}...")]
-        #         }
-        #     else:
-        #         logger.warning(f"⚠️ Comparison detected but cannot split: {split_result.get('error', 'Unknown error')}")
-        #         # Fall through to regular execution
+        # ========== CHECK 3: MULTI-INTENT DETECTION & DECOMPOSITION ==========
+        # Detect if query is single-intent (direct) or multi-intent (needs decomposition)
+        # Multi-intent queries are broken into single-intent sub-queries with dependencies
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Check if this is a retry from assessment node
+        retry_feedback = state.get("decomposition_assessment", {}).get("feedback", "")
+        decomposition_retry_count = state.get("decomposition_retry_count", 0)
+
+        # Call decomposition logic
+        decomposition_result = self._decompose_query(query, context, retry_feedback)
+
+        # Store classification and decomposition in state
+        query_classification = decomposition_result.get("classification", {})
+        query_decomposition = decomposition_result.get("decomposition", {})
+
+        requires_decomposition = query_classification.get("requires_decomposition", False)
+
+        if requires_decomposition:
+            logger.info(f"🔀 Multi-intent query detected: {query_classification['type']}")
+            logger.info(f"📝 Decomposed into {len(query_decomposition.get('sub_queries', []))} sub-queries")
+
+            # Route to assessment node for validation
+            return {
+                **state,  # Preserve existing state
+                "query_classification": query_classification,
+                "query_decomposition": query_decomposition,
+                "next_step": "query_assessment",
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Analyzing query: {query_classification['reasoning']}")
+                ],
+                "metadata": {
+                    **state.get("metadata", {}),
+                    "time_window": time_window_metadata,
+                },
+            }
+        else:
+            # Single-intent query - proceed normally
+            logger.info(f"✓ Single-intent query: {query_classification['reasoning']}")
 
         # Format profile context for injection
         if user_profile:
@@ -252,11 +304,14 @@ class WorkflowNodes:
 
         return {
             "plan": plan,
+            "query_classification": query_classification,  # Store classification even for single-intent
+            "query_decomposition": query_decomposition,  # Empty for single-intent
             "next_step": "router",  # Explicitly set next step to prevent LLM leakage
             "messages": [AIMessage(content=f"Plan created: {plan['reasoning']}")],
             "metadata": {
                 **state.get("metadata", {}),  # Preserve existing metadata
                 "time_window": time_window_metadata,
+                "query_classification": query_classification,
             },
         }
 
@@ -296,6 +351,114 @@ class WorkflowNodes:
             "routing_decision": routing_decision,
             "next_step": routing_decision["next_step"],
         }
+
+    def query_assessment_node(self, state: AgentState) -> Dict[str, Any]:
+        """
+        Assess if query decomposition adequately answers the original goal.
+
+        Validates that sub-queries are complete and sufficient. If not,
+        provides feedback and routes back to planner for retry.
+
+        Args:
+            state: Current agent state with query_decomposition
+
+        Returns:
+            Updated state with assessment and routing decision
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        query_decomposition = state.get("query_decomposition", {})
+        decomposition_retry_count = state.get("decomposition_retry_count", 0)
+        MAX_RETRIES = 2
+
+        # Extract decomposition details
+        original_query = query_decomposition.get("original_query", state["query"])
+        original_goal = query_decomposition.get("original_goal", state["query"])
+        sub_queries = query_decomposition.get("sub_queries", [])
+
+        # Format sub-queries for prompt
+        sub_queries_formatted = ""
+        for sq in sub_queries:
+            deps = ", ".join(sq.get("dependencies", [])) if sq.get("dependencies") else "None"
+            sub_queries_formatted += f"\n- **{sq['id']}** (order: {sq['execution_order']}, depends on: {deps})\n"
+            sub_queries_formatted += f"  Question: {sq['question']}\n"
+            sub_queries_formatted += f"  Intent: {sq['intent']}\n"
+
+        # Load assessor prompt
+        prompt = self.prompt_manager.get_agent_prompt(
+            "query_assessor",
+            variables={
+                "original_query": original_query,
+                "original_goal": original_goal,
+                "sub_queries_formatted": sub_queries_formatted,
+            }
+        )
+
+        messages = [HumanMessage(content=prompt)]
+        response = self.llm.invoke(messages)
+
+        try:
+            assessment = json.loads(response.content)
+        except json.JSONDecodeError:
+            # Fallback: assume complete if can't parse
+            logger.warning("Failed to parse assessment response, assuming complete")
+            assessment = {
+                "is_complete": True,
+                "can_answer_goal": True,
+                "confidence": "medium",
+                "reasoning": "Assessment parse failed, proceeding with decomposition",
+                "missing_intents": [],
+                "suggested_additions": [],
+                "feedback": "",
+                "retry_needed": False
+            }
+
+        is_complete = assessment.get("is_complete", False)
+        retry_needed = assessment.get("retry_needed", False)
+
+        logger.info(f"📋 Decomposition assessment: {'✓ Complete' if is_complete else '✗ Incomplete'}")
+        logger.info(f"   Reasoning: {assessment.get('reasoning', 'No reasoning provided')}")
+
+        # Store assessment in state
+        state_update = {
+            **state,
+            "decomposition_assessment": assessment,
+        }
+
+        if not is_complete and retry_needed and decomposition_retry_count < MAX_RETRIES:
+            # Incomplete - retry decomposition
+            logger.warning(f"⚠️ Decomposition incomplete. Retry {decomposition_retry_count + 1}/{MAX_RETRIES}")
+            logger.info(f"   Missing: {', '.join(assessment.get('missing_intents', []))}")
+
+            return {
+                **state_update,
+                "decomposition_retry_count": decomposition_retry_count + 1,
+                "next_step": "planner",  # Route back to planner with feedback
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Refining query analysis: {assessment.get('feedback', 'Addressing gaps')}")
+                ],
+            }
+        elif not is_complete and decomposition_retry_count >= MAX_RETRIES:
+            # Max retries reached - proceed anyway with warning
+            logger.warning(f"⚠️ Max retries reached. Proceeding with current decomposition.")
+            return {
+                **state_update,
+                "next_step": "router",
+                "messages": state.get("messages", []) + [
+                    AIMessage(content="Proceeding with query analysis (may be incomplete)")
+                ],
+            }
+        else:
+            # Complete - proceed to router
+            logger.info(f"✓ Decomposition validated. Proceeding to execution.")
+            return {
+                **state_update,
+                "next_step": "router",
+                "messages": state.get("messages", []) + [
+                    AIMessage(content="Query analysis complete. Executing...")
+                ],
+            }
 
     def interpreter_node(self, state: AgentState) -> Dict[str, Any]:
         """

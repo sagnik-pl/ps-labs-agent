@@ -13,17 +13,14 @@ def create_agent_workflow(checkpointer=None):
     Create the LangGraph agent workflow.
 
     Workflow:
-    START → planner ──→ router → sql_generator → sql_validator → sql_executor → data_interpreter
-              ↓                        ↑              ↓                              ↓
-              ↓                        └─ retry_sql ──┘                  interpretation_validator
-              ↓                                                                    ↓        ↓
-              ↓                                                       retry_interpretation  output_formatter → interpreter → END
-              ↓                                                              ↑                     ↑                 ↓
-              ↓                                                              └─────────────────────┘                 └──────────┘
-              ↓
-              # └─→ parallel_comparison (for "compare X vs Y" queries) ────────────────────────────┘  [DISABLED - REDESIGN]
-              ↓
-              └─→ END (for out-of-scope / needs-clarification)
+    START → planner ──→ query_assessment ──→ router → sql_generator → sql_validator → sql_executor → data_interpreter
+              ↓              ↓       ↑                     ↑              ↓                              ↓
+              ↓              ↓       └─── retry ───────────┘              └─ retry_sql ──┘                  interpretation_validator
+              ↓              ↓       (if incomplete)                                                                ↓        ↓
+              ↓              ↓                                                                         retry_interpretation  output_formatter → interpreter → END
+              ↓              └─→ router (single-intent, skip assessment)                                     ↑                     ↑                 ↓
+              ↓                                                                                              └─────────────────────┘                 └──────────┘
+              └─→ END (out-of-scope / needs-clarification / greetings)
 
     Args:
         checkpointer: Optional checkpointer for state persistence
@@ -39,6 +36,7 @@ def create_agent_workflow(checkpointer=None):
 
     # Add nodes
     workflow.add_node("planner", nodes.planner_node)
+    workflow.add_node("query_assessment", nodes.query_assessment_node)  # Validates decomposition
     workflow.add_node("router", nodes.router_node)
 
     # SQL generation and validation layer
@@ -59,30 +57,50 @@ def create_agent_workflow(checkpointer=None):
     # START -> planner
     workflow.add_edge(START, "planner")
 
-    # planner -> router OR END (for early exits like out-of-scope/needs-clarification)
-    # Note: parallel_comparison routing is DISABLED for redesign
+    # planner -> query_assessment OR router OR END
+    # - END: out-of-scope/greetings/needs-clarification
+    # - query_assessment: multi-intent queries (need validation)
+    # - router: single-intent queries (direct execution)
     def route_from_planner(state: AgentState):
-        """Determine next step from planner: router for normal flow or END for early exits."""
+        """Determine next step from planner based on query classification."""
         next_step = state.get("next_step", "router")
 
-        # Handle early exits (out-of-scope queries, needs clarification)
+        # Handle early exits (out-of-scope queries, needs clarification, greetings)
         if next_step == "END":
-            return END  # Return LangGraph's END constant directly
+            return END
 
-        # DISABLED: Handle comparison queries
-        # if next_step == "parallel_execute":
-        #     return "parallel_comparison"
+        # Handle multi-intent decomposition (route to assessment)
+        if next_step == "query_assessment":
+            return "query_assessment"
 
-        # Normal routing flow
+        # Normal single-intent flow
         return "router"
 
     workflow.add_conditional_edges(
         "planner",
         route_from_planner,
         {
+            "query_assessment": "query_assessment",
             "router": "router",
-            # "parallel_comparison": "parallel_comparison",  # DISABLED FOR REDESIGN
-            END: END  # Use END constant as key to match return value
+            END: END
+        }
+    )
+
+    # query_assessment -> planner (retry) OR router (proceed)
+    def route_from_assessment(state: AgentState):
+        """Route based on assessment: retry decomposition or proceed to execution."""
+        next_step = state.get("next_step", "router")
+
+        if next_step == "planner":
+            return "planner"  # Retry decomposition
+        return "router"  # Proceed to execution
+
+    workflow.add_conditional_edges(
+        "query_assessment",
+        route_from_assessment,
+        {
+            "planner": "planner",
+            "router": "router"
         }
     )
 
