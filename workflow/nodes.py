@@ -23,6 +23,55 @@ class WorkflowNodes:
         )
         self.prompt_manager = prompt_manager
 
+    def _detect_time_window(self, query: str) -> Dict[str, Any]:
+        """
+        Detect if query mentions a time window/period.
+
+        Returns dict with:
+        - has_time_window: bool
+        - time_expressions: list of detected time expressions
+        """
+        import re
+
+        # Common time window patterns
+        time_patterns = [
+            r'\blast\s+\d+\s+(day|days|week|weeks|month|months|year|years)\b',
+            r'\bpast\s+\d+\s+(day|days|week|weeks|month|months|year|years)\b',
+            r'\bprevious\s+(day|week|month|quarter|year)\b',
+            r'\bthis\s+(day|week|month|quarter|year)\b',
+            r'\byesterday\b',
+            r'\btoday\b',
+            r'\bthis\s+week\b',
+            r'\blast\s+week\b',
+            r'\bthis\s+month\b',
+            r'\blast\s+month\b',
+            r'\bthis\s+quarter\b',
+            r'\blast\s+quarter\b',
+            r'\bthis\s+year\b',
+            r'\blast\s+year\b',
+            r'\bsince\s+\d{4}',
+            r'\bfrom\s+\d{1,2}[/-]\d{1,2}',
+            r'\bbetween\s+\d{1,2}[/-]\d{1,2}',
+            r'\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)',
+            r'\bin\s+\d{4}',
+            r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}',
+            r'\bbefore\s+that\b',
+            r'\bprior\s+to\s+that\b',
+        ]
+
+        detected_expressions = []
+        for pattern in time_patterns:
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            if matches:
+                detected_expressions.extend(matches if isinstance(matches[0], str) else [m[0] for m in matches])
+
+        has_time_window = len(detected_expressions) > 0
+
+        return {
+            "has_time_window": has_time_window,
+            "time_expressions": detected_expressions
+        }
+
     def planner_node(self, state: AgentState) -> Dict[str, Any]:
         """
         Create an execution plan for the user query.
@@ -45,6 +94,18 @@ class WorkflowNodes:
         query = state["query"]
         context = state.get("context", "")
         user_profile = state.get("user_profile")
+
+        # ========== TIME WINDOW DETECTION ==========
+        # Detect if query mentions a time window, default to last 30 days if not
+        time_window_check = self._detect_time_window(query)
+        has_time_window = time_window_check["has_time_window"]
+
+        # Store time window metadata to be included in final response
+        time_window_metadata = {
+            "has_explicit_time_window": has_time_window,
+            "detected_expressions": time_window_check["time_expressions"],
+            "defaulted_to_30_days": not has_time_window,
+        }
 
         # ========== CHECK 0: Data Inquiry Detection ==========
         # Check if user is asking ABOUT data availability (meta-query) rather than requesting data
@@ -193,6 +254,10 @@ class WorkflowNodes:
             "plan": plan,
             "next_step": "router",  # Explicitly set next step to prevent LLM leakage
             "messages": [AIMessage(content=f"Plan created: {plan['reasoning']}")],
+            "metadata": {
+                **state.get("metadata", {}),  # Preserve existing metadata
+                "time_window": time_window_metadata,
+            },
         }
 
     def router_node(self, state: AgentState) -> Dict[str, Any]:
@@ -497,6 +562,12 @@ class WorkflowNodes:
         response = self.llm.invoke(messages)
 
         formatted_output = response.content
+
+        # Check if we defaulted to 30 days and append notice
+        time_window_metadata = state.get("metadata", {}).get("time_window", {})
+        if time_window_metadata.get("defaulted_to_30_days", False):
+            # Append time window notice to formatted output
+            formatted_output += "\n\n---\n\n_Note: This analysis covers the **last 30 days** by default since no specific time period was mentioned._"
 
         logger.info("Output formatted successfully")
 

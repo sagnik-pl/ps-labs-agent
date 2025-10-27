@@ -44,6 +44,10 @@ prompt: |
   ### Important Guidelines
 
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
+  - **Time Window Default**: If the user's question does NOT specify a time period, date range, or timeframe:
+    - ✅ DEFAULT to last 30 days using: `AND timestamp >= date_add('day', -30, current_date)`
+    - This applies to all time-series queries (media posts, insights, performance metrics)
+    - If user specifies a time period (e.g., "last week", "this month"), use that instead
   - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
     join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`
   - **DISTINCT for JOINs**: Use `SELECT DISTINCT` when JOINs might produce duplicate rows:
