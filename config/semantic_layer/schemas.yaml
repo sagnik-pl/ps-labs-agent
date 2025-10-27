@@ -4,6 +4,7 @@ tables:
   instagram_media:
     description: Instagram posts and reels metadata including captions, timestamps, and content type
     category: social_media
+    data_stream_type: instagram
     columns:
       id:
         name: id
@@ -88,6 +89,7 @@ tables:
   instagram_media_insights:
     description: Performance metrics for Instagram posts including reach, engagement, and interactions
     category: social_media
+    data_stream_type: instagram
     columns:
       id:
         name: id
@@ -235,6 +237,7 @@ tables:
     description: Instagram business account profile information including follower counts, media counts, and bio data. Full
       refresh data - shows latest account state for each sync.
     category: social_media
+    data_stream_type: instagram
     columns:
       id:
         name: id
@@ -370,6 +373,7 @@ tables:
     description: Daily Instagram account-level metrics including reach, follower count, and online followers data. INCREMENTAL
       data - each record represents a specific date's metrics.
     category: social_media
+    data_stream_type: instagram
     columns:
       date:
         name: date
@@ -496,6 +500,7 @@ tables:
     description: Instagram user lifetime demographics and follower breakdowns by age/gender, country, and city. Contains follower_demographics
       metric with value as JSON string containing demographic distribution.
     category: social_media
+    data_stream_type: instagram
     columns:
       metric:
         name: metric
@@ -646,6 +651,7 @@ tables:
     description: Facebook Ads performance metrics broken down by DMA (Designated Market Area) regions. Includes spend, reach,
       clicks, conversions, and detailed action data.
     category: advertising
+    data_stream_type: facebook
     columns:
       ad_id:
         name: ad_id
@@ -1018,6 +1024,7 @@ tables:
     description: Google Analytics 4 e-commerce item performance report. Shows product-level metrics including views, add-to-carts,
       purchases, and revenue by item name.
     category: analytics
+    data_stream_type: google_analytics
     columns:
       date:
         name: date

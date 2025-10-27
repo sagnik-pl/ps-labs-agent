@@ -279,6 +279,61 @@ class SemanticLayer:
             return []
         return list(table.get('columns', {}).keys())
 
+    def get_table_data_stream_type(self, table_name: str) -> Optional[str]:
+        """
+        Get the data stream type for a table.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            Data stream type (instagram, facebook, google_analytics) or None
+
+        Example:
+            >>> semantic_layer.get_table_data_stream_type('instagram_media')
+            'instagram'
+        """
+        table = self.get_table_schema(table_name)
+        return table.get('data_stream_type') if table else None
+
+    def list_tables_by_data_stream(self, data_stream_type: str) -> List[str]:
+        """
+        List all tables for a specific data stream type.
+
+        Args:
+            data_stream_type: Data stream type (instagram, facebook, google_analytics)
+
+        Returns:
+            List of table names for that data stream
+
+        Example:
+            >>> semantic_layer.list_tables_by_data_stream('instagram')
+            ['instagram_media', 'instagram_media_insights', 'instagram_users',
+             'instagram_user_insights', 'instagram_user_lifetime_insights']
+        """
+        return [
+            table_name for table_name, table_schema in self.schemas.items()
+            if table_schema.get('data_stream_type') == data_stream_type
+        ]
+
+    def get_available_data_streams(self) -> List[str]:
+        """
+        Get list of all available data stream types.
+
+        Returns:
+            List of unique data stream types
+
+        Example:
+            >>> semantic_layer.get_available_data_streams()
+            ['instagram', 'facebook', 'google_analytics']
+        """
+        data_streams = set()
+        for table_schema in self.schemas.values():
+            stream_type = table_schema.get('data_stream_type')
+            if stream_type:
+                data_streams.add(stream_type)
+        return sorted(list(data_streams))
+
     def get_aggregatable_columns(self, table_name: str) -> List[str]:
         """Get list of columns that can be aggregated (SUM, AVG, etc.)."""
         table = self.get_table_schema(table_name)
