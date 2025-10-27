@@ -87,18 +87,15 @@ def create_agent_workflow(checkpointer=None):
 
     # router -> sql_generator (for data analytics queries)
     def route_to_agent(state: AgentState) -> str:
-        """Determine which agent to route to."""
-        next_step = state.get("next_step", "sql_generator")
+        """
+        Route to appropriate node based on query type.
 
-        # Map agent names to node names
-        agent_map = {
-            "data_analytics_agent": "sql_generator",
-            "data_analytics": "sql_generator",
-            "sql_generator": "sql_generator",
-            # Future agents will be added here
-        }
-
-        return agent_map.get(next_step, "sql_generator")
+        Currently only data analytics queries are supported, which route to sql_generator.
+        Future: Add routing logic for other specialized agents here.
+        """
+        # Currently only data analytics queries supported
+        # All queries route through the SQL pipeline: sql_generator → validator → executor
+        return "sql_generator"
 
     workflow.add_conditional_edges(
         "router",

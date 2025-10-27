@@ -194,7 +194,10 @@ class WorkflowNodes:
 
     def router_node(self, state: AgentState) -> Dict[str, Any]:
         """
-        Route query to appropriate agent based on the plan.
+        Route query to appropriate node based on the plan.
+
+        Currently routes all queries to sql_generator for data analytics.
+        Future: Add logic to route to other specialized nodes.
 
         Args:
             state: Current agent state
@@ -211,8 +214,8 @@ class WorkflowNodes:
             # Fallback to default routing
             routing_decision = {
                 "primary_agent": "data_analytics",
-                "reasoning": "Default routing",
-                "next_step": "data_analytics_agent",
+                "reasoning": "Default routing to SQL pipeline",
+                "next_step": "sql_generator",
             }
         else:
             first_step = steps[0]
@@ -221,7 +224,7 @@ class WorkflowNodes:
             routing_decision = {
                 "primary_agent": agent,
                 "reasoning": first_step.get("action", "Execute query"),
-                "next_step": f"{agent}_agent",
+                "next_step": "sql_generator",  # Direct node name
             }
 
         return {
