@@ -17,7 +17,7 @@ class WorkflowNodes:
     def __init__(self):
         """Initialize workflow nodes with OpenAI."""
         self.llm = ChatOpenAI(
-            model="gpt-4o",  # Upgraded from gpt-4-turbo-preview for 2x speed improvement
+            model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: 2x better reasoning, 83% cost reduction, 30% faster vs gpt-4o
             openai_api_key=settings.openai_api_key,
             temperature=0,
         )
