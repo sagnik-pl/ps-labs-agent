@@ -671,11 +671,14 @@ class WorkflowNodes:
         """
         Format sub-query results for the data interpreter prompt.
 
+        Includes the SQL query, data results, and execution status for each sub-query
+        to enable comprehensive synthesis across multiple sub-queries.
+
         Args:
-            sub_results: Dictionary of sub-query results
+            sub_results: Dictionary of sub-query results with SQL and data
 
         Returns:
-            Formatted string with all sub-query results
+            Formatted string with all sub-query results including SQL queries
         """
         formatted = []
         for sq_id, result in sub_results.items():
@@ -684,10 +687,19 @@ class WorkflowNodes:
             formatted.append(f"   Intent: {result['intent']}")
             formatted.append(f"   Status: {result['execution_status']}")
 
-            # Truncate data if too long (keep first 800 chars)
-            data = result['data']
-            if len(data) > 800:
-                formatted.append(f"   Data: {data[:800]}... (truncated)")
+            # Include SQL query for transparency and context
+            sql = result.get('sql', 'N/A')
+            if sql and sql != 'N/A':
+                # Truncate SQL if very long (keep first 400 chars)
+                if len(sql) > 400:
+                    formatted.append(f"   SQL: {sql[:400]}... (truncated)")
+                else:
+                    formatted.append(f"   SQL: {sql}")
+
+            # Include data results (increase limit to 1200 chars for richer context)
+            data = result.get('data', 'No data')
+            if len(data) > 1200:
+                formatted.append(f"   Data: {data[:1200]}... (truncated)")
             else:
                 formatted.append(f"   Data: {data}")
 
@@ -935,8 +947,48 @@ This query required breaking down into multiple sub-queries for comprehensive an
 **Sub-Query Results**:
 {sub_results_formatted}
 
-**Your Task**:
-Synthesize insights from ALL sub-queries to provide a comprehensive answer that directly addresses the original goal. Show how the pieces connect and give actionable recommendations based on the combined data.
+**Your Task - Multi-Intent Synthesis**:
+You must STITCH TOGETHER findings from all sub-queries into ONE comprehensive, cohesive response that answers the original goal holistically.
+
+**Synthesis Requirements** (CRITICAL - follow exactly):
+
+1. **Connect the Dots**:
+   - Show how findings from different sub-queries relate to and influence each other
+   - Identify patterns, correlations, or contradictions across sub-queries
+   - Don't treat sub-queries as isolated data points
+
+2. **Build a Narrative**:
+   - Create a coherent story from individual data points
+   - Use transitions like "This explains why...", "As a result...", "However..."
+   - Present a unified picture, not a list of separate findings
+
+3. **Answer the Original Goal**:
+   - Directly address the user's high-level question
+   - Focus on the big picture, not individual sub-query details
+   - Your response should answer "{original_goal}", not just summarize sub-queries
+
+4. **Cross-Reference Findings**:
+   - Reference findings across sub-queries explicitly
+   - Example: "Your low engagement (sq_1: 2.8%) is likely caused by inconsistent posting (sq_2: only 6 posts/month vs recommended 12-15)"
+   - Show cause-and-effect relationships
+
+5. **Unified Recommendations**:
+   - Provide actions that consider ALL findings together
+   - Prioritize recommendations based on combined insights
+   - Show how one action addresses multiple issues
+
+**Example of Good vs Bad Synthesis**:
+
+❌ **BAD** (just listing sub-query results):
+- sq_1: Your engagement is 2.8%
+- sq_2: You posted 6 times this month
+- sq_3: Your reach is 8,000
+- sq_4: You gained 50 followers
+
+✅ **GOOD** (stitching together):
+"Your Instagram performance shows a critical pattern: despite decent reach (8K), your engagement is below benchmark (2.8% vs 3.5% industry avg), which directly stems from inconsistent posting—only 6 posts this month versus the recommended 12-15. This infrequent posting not only hurts engagement but also limits follower growth (50 new followers is 40% below potential). The solution: increase posting frequency to 3-4x/week with high-quality content to simultaneously boost engagement, reach, and follower acquisition."
+
+Now synthesize the sub-query results above following these requirements.
 """
 
         messages = [HumanMessage(content=prompt)]

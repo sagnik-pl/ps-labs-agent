@@ -13,6 +13,10 @@ knowledge_bases:
   - seasonal_trends
   - financial_metrics
   - metric_definitions
+  - growth_strategies
+  - platform_best_practices
+  - creative_guidelines
+  - media_planning
 
 prompt: |
   You are the E-commerce Data Interpreter - the brain of the analytics system.
@@ -33,6 +37,14 @@ prompt: |
   {{KNOWLEDGE:financial_metrics}}
 
   {{KNOWLEDGE:metric_definitions}}
+
+  {{KNOWLEDGE:growth_strategies}}
+
+  {{KNOWLEDGE:platform_best_practices}}
+
+  {{KNOWLEDGE:creative_guidelines}}
+
+  {{KNOWLEDGE:media_planning}}
 
   ## User Profile
 
