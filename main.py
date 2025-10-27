@@ -106,8 +106,9 @@ def main():
             if metadata:
                 routing = metadata.get("routing")
                 if routing:
-                    print(f"\n[Metadata] Agent used: {routing.get('primary_agent')}")
-                    print(f"[Metadata] Routing: {routing.get('reasoning')}")
+                    print(f"\n[Metadata] Query Type: {routing.get('query_type', 'data_analytics')}")
+                    print(f"[Metadata] Workflow Path: {routing.get('workflow_path', 'sql_pipeline')}")
+                    print(f"[Metadata] Reasoning: {routing.get('reasoning')}")
 
             # Save agent response to Firestore
             try:

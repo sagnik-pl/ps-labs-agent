@@ -27,12 +27,12 @@ class AgentState(TypedDict):
     # Planning & Routing
     plan: Optional[Dict[str, Any]]  # Execution plan
     execution_plan: Optional[Dict[str, Any]]  # Detailed execution plan (for comparisons, etc.)
-    routing_decision: Optional[Dict[str, Any]]  # Which agent(s) to use
+    routing_decision: Optional[Dict[str, Any]]  # Routing decision (query type, workflow path)
     next_step: Optional[str]  # Next node to execute
 
-    # Agent Execution
-    current_agent: Optional[str]  # Currently executing agent
-    agent_results: Dict[str, Any]  # Results from agent execution
+    # Node Execution
+    current_agent: Optional[str]  # Currently executing node (legacy field name, contains node name)
+    agent_results: Dict[str, Any]  # Results from node execution (legacy field name)
 
     # SQL Query Generation & Validation (new layer)
     generated_sql: Optional[str]  # Generated SQL query

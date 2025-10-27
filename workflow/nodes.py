@@ -176,14 +176,14 @@ class WorkflowNodes:
                 "steps": [
                     {
                         "step_number": 1,
-                        "agent": "data_analytics",
-                        "action": "Execute data query",
+                        "action": "Execute data query via SQL pipeline",
+                        "workflow_path": "sql_pipeline",
                         "dependencies": [],
                     }
                 ],
                 "requires_multiple_agents": False,
                 "estimated_complexity": "medium",
-                "reasoning": "Single agent execution",
+                "reasoning": "Single node execution through SQL pipeline",
             }
 
         return {
@@ -194,10 +194,10 @@ class WorkflowNodes:
 
     def router_node(self, state: AgentState) -> Dict[str, Any]:
         """
-        Route query to appropriate node based on the plan.
+        Route query to SQL generation pipeline.
 
-        Currently routes all queries to sql_generator for data analytics.
-        Future: Add logic to route to other specialized nodes.
+        Currently all queries route to sql_generator for data analytics.
+        Future: Add routing logic for other query types (creative, competitor analysis, etc.).
 
         Args:
             state: Current agent state
@@ -210,26 +210,22 @@ class WorkflowNodes:
 
         # Get the first step from plan
         steps = plan.get("steps", [])
-        if not steps:
-            # Fallback to default routing
-            routing_decision = {
-                "primary_agent": "data_analytics",
-                "reasoning": "Default routing to SQL pipeline",
-                "next_step": "sql_generator",
-            }
-        else:
-            first_step = steps[0]
-            agent = first_step.get("agent", "data_analytics")
 
-            routing_decision = {
-                "primary_agent": agent,
-                "reasoning": first_step.get("action", "Execute query"),
-                "next_step": "sql_generator",  # Direct node name
-            }
+        # Extract reasoning from plan if available
+        if steps:
+            reasoning = steps[0].get("action", "Execute data query via SQL pipeline")
+        else:
+            reasoning = "Default routing to SQL pipeline"
+
+        routing_decision = {
+            "query_type": "data_analytics",  # Type of query being handled
+            "reasoning": reasoning,
+            "next_step": "sql_generator",
+            "workflow_path": "sql_pipeline",  # Which workflow path we're taking
+        }
 
         return {
             "routing_decision": routing_decision,
-            "current_agent": routing_decision["primary_agent"],
             "next_step": routing_decision["next_step"],
         }
 
