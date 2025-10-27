@@ -1140,6 +1140,15 @@ Synthesize insights from ALL sub-queries to provide a comprehensive answer that 
         query = state["query"]
         user_id = state.get("user_id")
         validation_feedback = state.get("sql_validation_feedback", "")
+        correction_recommendations = state.get("sql_correction_recommendations")
+
+        # Check if we're in correction mode (retry with recommendations)
+        is_correction_mode = correction_recommendations is not None
+
+        if is_correction_mode:
+            logger.info("🔧 SQL Generation: CORRECTION MODE (using fix recommendations)")
+        else:
+            logger.info("🆕 SQL Generation: FRESH MODE (initial generation)")
 
         # ========== STEP 1: Try Template-Based Generation ==========
         # Check if query matches a pre-optimized template
@@ -1226,6 +1235,33 @@ Synthesize insights from ALL sub-queries to provide a comprehensive answer that 
                 if 'template' in pattern_def:
                     pattern_info += f"\n**Example Template Structure**:\n{pattern_def['template'][:500]}...\n"
 
+        # Format correction recommendations if present
+        correction_mode_info = ""
+        if is_correction_mode:
+            recommendations = correction_recommendations
+            error_category = recommendations.get("error_category", "UNKNOWN")
+            summary = recommendations.get("summary", "")
+
+            correction_mode_info = f"\n\n## CORRECTION MODE ACTIVE\n\n"
+            correction_mode_info += f"**Error Category**: {error_category}\n"
+            correction_mode_info += f"**Summary**: {summary}\n\n"
+            correction_mode_info += "**Specific Issues**:\n"
+            for issue in recommendations.get("specific_issues", []):
+                correction_mode_info += f"- {issue.get('issue', '')} ({issue.get('location', 'unknown location')})\n"
+                correction_mode_info += f"  Reason: {issue.get('reason', '')}\n"
+
+            correction_mode_info += "\n**Fix Recommendations** (apply in order):\n"
+            for rec in recommendations.get("fix_recommendations", []):
+                step = rec.get("step", "?")
+                action = rec.get("action", "")
+                reasoning = rec.get("reasoning", "")
+                snippet = rec.get("corrected_snippet", "")
+
+                correction_mode_info += f"\n{step}. {action}\n"
+                correction_mode_info += f"   Reasoning: {reasoning}\n"
+                if snippet:
+                    correction_mode_info += f"   Corrected Code: `{snippet}`\n"
+
         # Load SQL generator prompt
         prompt = self.prompt_manager.get_agent_prompt(
             "sql_generator",
@@ -1233,7 +1269,8 @@ Synthesize insights from ALL sub-queries to provide a comprehensive answer that 
                 "user_query": query,
                 "user_id": user_id,
                 "table_schemas": table_schemas + pattern_info,
-                "validation_feedback": validation_feedback or "No previous feedback"
+                "validation_feedback": validation_feedback or "No previous feedback",
+                "correction_recommendations": correction_mode_info or "No correction recommendations"
             }
         )
 
@@ -1251,6 +1288,7 @@ Synthesize insights from ALL sub-queries to provide a comprehensive answer that 
         return {
             "generated_sql": generated_sql,
             "table_schemas": table_schemas,
+            "sql_correction_recommendations": None,  # Clear recommendations after use
             "messages": [AIMessage(content=f"Generated SQL query")],
         }
 
@@ -1447,6 +1485,106 @@ Synthesize insights from ALL sub-queries to provide a comprehensive answer that 
             "sql_complexity": complexity,  # Store full complexity analysis
             "sql_retry_count": retry_count + 1 if needs_retry else retry_count,
             "next_step": "retry_sql" if needs_retry else "execute_sql",
+        }
+
+    def sql_corrector_node(self, state: AgentState) -> Dict[str, Any]:
+        """
+        Analyze SQL validation failures and provide specific fix recommendations.
+
+        This node acts as an intermediary between the validator and generator on retries.
+        It translates validation feedback into structured, actionable recommendations
+        that the SQL generator can use to regenerate a corrected query.
+
+        Args:
+            state: Current agent state with validation failure
+
+        Returns:
+            Updated state with correction recommendations
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        query = state["query"]
+        user_id = state.get("user_id")
+        generated_sql = state.get("generated_sql", "")
+        validation_feedback = state.get("sql_validation_feedback", "")
+        table_schemas = state.get("table_schemas", "")
+
+        logger.info("🔧 Analyzing SQL validation failure for correction recommendations...")
+
+        # Load SQL corrector prompt
+        prompt = self.prompt_manager.get_agent_prompt(
+            "sql_corrector",
+            variables={
+                "user_query": query,
+                "generated_sql": generated_sql,
+                "validation_feedback": validation_feedback,
+                "table_schemas": table_schemas,
+                "user_id": user_id,
+            }
+        )
+
+        messages = [HumanMessage(content=prompt)]
+        response = self.llm.invoke(messages)
+
+        try:
+            # Try to parse JSON directly
+            recommendations = json.loads(response.content)
+        except json.JSONDecodeError:
+            # Try to extract JSON from markdown code blocks
+            content = response.content.strip()
+
+            # Remove markdown code blocks if present
+            if content.startswith("```"):
+                lines = content.split("\n")
+                json_lines = []
+                in_code_block = False
+                for line in lines:
+                    if line.startswith("```"):
+                        in_code_block = not in_code_block
+                        continue
+                    if in_code_block:
+                        json_lines.append(line)
+                content = "\n".join(json_lines)
+
+            try:
+                recommendations = json.loads(content)
+            except json.JSONDecodeError as e:
+                # Still failed - create minimal recommendations
+                logger.warning(f"SQL corrector parsing failed: {e}")
+                recommendations = {
+                    "error_category": "UNKNOWN",
+                    "specific_issues": [
+                        {
+                            "issue": "Validation failed",
+                            "location": "Unknown",
+                            "reason": validation_feedback
+                        }
+                    ],
+                    "fix_recommendations": [
+                        {
+                            "step": 1,
+                            "action": "Review validation feedback and regenerate SQL",
+                            "reasoning": validation_feedback,
+                            "corrected_snippet": ""
+                        }
+                    ],
+                    "summary": "Review validation feedback and fix errors"
+                }
+
+        # Log recommendations
+        error_category = recommendations.get("error_category", "UNKNOWN")
+        summary = recommendations.get("summary", "No summary")
+        logger.info(f"   Error Category: {error_category}")
+        logger.info(f"   Fix Summary: {summary}")
+
+        num_fixes = len(recommendations.get("fix_recommendations", []))
+        logger.info(f"   Recommendations: {num_fixes} fix step(s)")
+
+        return {
+            "sql_correction_recommendations": recommendations,
+            "next_step": "generate_with_corrections",
+            "messages": [AIMessage(content=f"Analyzed SQL error: {error_category}. Generated {num_fixes} fix recommendation(s).")],
         }
 
     def sql_executor_node(self, state: AgentState) -> Dict[str, Any]:

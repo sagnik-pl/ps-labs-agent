@@ -26,12 +26,13 @@ def create_agent_workflow(checkpointer=None):
     Single-Intent Path: ─────────────────────────────────┘
     router → sql_generator → sql_validator → sql_executor → data_interpreter
                    ↑              ↓
-                   └─ retry_sql ──┘
+                   └─ sql_corrector ──┘
+                      (if validation fails - analyzes errors & provides fix recommendations)
 
     Multi-Intent Path: ───────────────────────────────────┐
     router → multi_intent_executor → data_interpreter     │
              └→ For each sub-query (parallel):            │
-                sql_generator → sql_validator             │
+                sql_generator → sql_validator → sql_corrector (if needed)
                 → sql_executor (internal)                 │
                                                            │
     Final Path (both converge): ───────────────────────────┘
@@ -62,6 +63,7 @@ def create_agent_workflow(checkpointer=None):
     # SQL generation and validation layer
     workflow.add_node("sql_generator", nodes.sql_generator_node)
     workflow.add_node("sql_validator", nodes.sql_validator_node)
+    workflow.add_node("sql_corrector", nodes.sql_corrector_node)  # Error analysis and fix recommendations
     workflow.add_node("sql_executor", nodes.sql_executor_node)
 
     # Parallel comparison execution layer - DISABLED FOR REDESIGN
@@ -154,23 +156,26 @@ def create_agent_workflow(checkpointer=None):
     # sql_generator -> sql_validator
     workflow.add_edge("sql_generator", "sql_validator")
 
-    # sql_validator -> sql_executor or retry sql_generator
-    def should_retry_sql(state: AgentState) -> Literal["sql_executor", "sql_generator"]:
-        """Determine if we need to retry SQL generation or proceed to execution."""
+    # sql_validator -> sql_executor or sql_corrector (on validation failure)
+    def should_retry_sql(state: AgentState) -> Literal["sql_executor", "sql_corrector"]:
+        """Determine if we need to correct SQL or proceed to execution."""
         next_step = state.get("next_step", "execute_sql")
 
         if next_step == "retry_sql":
-            return "sql_generator"
+            return "sql_corrector"  # Route to corrector for error analysis
         return "sql_executor"
 
     workflow.add_conditional_edges(
         "sql_validator",
         should_retry_sql,
         {
-            "sql_generator": "sql_generator",
+            "sql_corrector": "sql_corrector",
             "sql_executor": "sql_executor",
         },
     )
+
+    # sql_corrector -> sql_generator (with fix recommendations)
+    workflow.add_edge("sql_corrector", "sql_generator")
 
     # sql_executor -> data_interpreter
     workflow.add_edge("sql_executor", "data_interpreter")

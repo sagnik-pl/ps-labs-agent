@@ -30,6 +30,8 @@ prompt: |
 
   **Previous Attempt Feedback** (if retry): {validation_feedback}
 
+  **Correction Recommendations** (if available): {correction_recommendations}
+
   ## Instructions
 
   Generate a SQL query that:
@@ -79,6 +81,23 @@ prompt: |
   - Read the feedback carefully
   - Fix the specific issues mentioned
   - Don't introduce new errors
+
+  ### If Correction Recommendations are Provided
+
+  When correction recommendations are available (indicated by "CORRECTION MODE ACTIVE"):
+  - **PRIORITY**: Follow the fix recommendations step-by-step in order
+  - Use the corrected code snippets provided as guidance
+  - Apply each fix carefully to the problematic sections
+  - The recommendations contain specific issues and their exact fixes
+  - Don't deviate from the recommended fixes unless absolutely necessary
+  - This mode means validation already failed - the recommendations tell you exactly what to fix
+
+  **Correction Mode Workflow**:
+  1. Review the error category and summary
+  2. Understand each specific issue listed
+  3. Apply each fix recommendation in numerical order
+  4. Use the corrected code snippets as reference
+  5. Regenerate the complete corrected SQL query
 
   ## Response Format
 

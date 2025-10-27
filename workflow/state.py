@@ -99,6 +99,7 @@ class AgentState(TypedDict):
     generated_sql: Optional[str]  # Generated SQL query
     sql_validation: Optional[Dict[str, Any]]  # SQL validation result
     sql_validation_feedback: Optional[str]  # Feedback for SQL regeneration
+    sql_correction_recommendations: Optional[Dict[str, Any]]  # Structured fix recommendations from corrector
     sql_retry_count: int  # Number of SQL generation retries
     table_schemas: Optional[str]  # Available table schemas for SQL generation
 
