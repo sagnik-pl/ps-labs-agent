@@ -21,7 +21,8 @@ def create_agent_workflow(checkpointer=None):
               ↓              (single-intent, skip       │
               ↓               assessment)                │
               └─→ END                                    │
-              (out-of-scope/needs-clarification)        │
+              (out-of-scope/needs-clarification/        │
+               data-inquiry/greetings)                   │
                                                          │
     Single-Intent Path: ─────────────────────────────────┘
     router → sql_generator → sql_validator → sql_executor → data_interpreter
@@ -34,11 +35,34 @@ def create_agent_workflow(checkpointer=None):
              └→ For each sub-query (parallel):            │
                 sql_generator → sql_validator → sql_corrector (if needed)
                 → sql_executor (internal)                 │
+                → Results include: SQL query + data + status │
                                                            │
     Final Path (both converge): ───────────────────────────┘
     data_interpreter → interpretation_validator → output_formatter → interpreter → END
-                             ↓
-                 retry_interpretation ─┘
+           ↑                    ↓
+           └─ retry_interpretation ─┘
+              (if validation fails - provides feedback for improvement)
+
+    Key Enhancements (Recent):
+    1. DATA INTERPRETER NODE:
+       - Uses ALL 11 knowledge bases (was 7) for richer insights
+       - Multi-intent queries show individual SQL + results before synthesis
+       - Explicit 5-point synthesis requirements for cohesive narratives
+
+    2. INTERPRETATION VALIDATOR NODE:
+       - Priority-based criteria: "Answers the Question" is #1 (most critical)
+       - Multi-Intent Synthesis Quality validation (Criterion #9)
+       - Checks stitching, cross-referencing, unified recommendations
+
+    3. METRICS SYSTEM:
+       - Dual-mode Python-based metrics (Python calculation + SQL generation)
+       - Instant Python-first migration with YAML fallback
+       - Type-safe SQL with NULLIF and CAST protection
+
+    4. SQL GENERATION:
+       - Template matching for common queries (200-500ms faster)
+       - Enhanced schema context from schemas.yaml
+       - Pattern hints for better LLM generation
 
     Args:
         checkpointer: Optional checkpointer for state persistence
