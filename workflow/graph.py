@@ -21,7 +21,7 @@ def create_agent_workflow(checkpointer=None):
               ↓                                                              ↑                     ↑                 ↓
               ↓                                                              └─────────────────────┘                 └──────────┘
               ↓
-              └─→ parallel_comparison (for "compare X vs Y" queries) ────────────────────────────┘
+              # └─→ parallel_comparison (for "compare X vs Y" queries) ────────────────────────────┘  [DISABLED - REDESIGN]
               ↓
               └─→ END (for out-of-scope / needs-clarification)
 
@@ -46,8 +46,8 @@ def create_agent_workflow(checkpointer=None):
     workflow.add_node("sql_validator", nodes.sql_validator_node)
     workflow.add_node("sql_executor", nodes.sql_executor_node)
 
-    # Parallel comparison execution layer
-    workflow.add_node("parallel_comparison", nodes.parallel_comparison_node)
+    # Parallel comparison execution layer - DISABLED FOR REDESIGN
+    # workflow.add_node("parallel_comparison", nodes.parallel_comparison_node)
 
     # Data interpretation layer
     workflow.add_node("data_interpreter", nodes.data_interpreter_node)
@@ -59,18 +59,19 @@ def create_agent_workflow(checkpointer=None):
     # START -> planner
     workflow.add_edge(START, "planner")
 
-    # planner -> router OR parallel_comparison OR END (for early exits like out-of-scope/needs-clarification)
+    # planner -> router OR END (for early exits like out-of-scope/needs-clarification)
+    # Note: parallel_comparison routing is DISABLED for redesign
     def route_from_planner(state: AgentState):
-        """Determine next step from planner: router for normal flow, parallel_comparison for comparisons, or END for early exits."""
+        """Determine next step from planner: router for normal flow or END for early exits."""
         next_step = state.get("next_step", "router")
 
         # Handle early exits (out-of-scope queries, needs clarification)
         if next_step == "END":
             return END  # Return LangGraph's END constant directly
 
-        # Handle comparison queries
-        if next_step == "parallel_execute":
-            return "parallel_comparison"
+        # DISABLED: Handle comparison queries
+        # if next_step == "parallel_execute":
+        #     return "parallel_comparison"
 
         # Normal routing flow
         return "router"
@@ -80,7 +81,7 @@ def create_agent_workflow(checkpointer=None):
         route_from_planner,
         {
             "router": "router",
-            "parallel_comparison": "parallel_comparison",
+            # "parallel_comparison": "parallel_comparison",  # DISABLED FOR REDESIGN
             END: END  # Use END constant as key to match return value
         }
     )
@@ -130,8 +131,8 @@ def create_agent_workflow(checkpointer=None):
     # sql_executor -> data_interpreter
     workflow.add_edge("sql_executor", "data_interpreter")
 
-    # parallel_comparison -> output_formatter (skip interpretation since it's already formatted)
-    workflow.add_edge("parallel_comparison", "output_formatter")
+    # DISABLED: parallel_comparison -> output_formatter (skip interpretation since it's already formatted)
+    # workflow.add_edge("parallel_comparison", "output_formatter")
 
     # data_interpreter -> interpretation_validator
     workflow.add_edge("data_interpreter", "interpretation_validator")

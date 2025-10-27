@@ -39,8 +39,8 @@ class WorkflowNodes:
             Updated state with execution plan
         """
         from utils.profile_defaults import format_profile_for_prompt
-        from utils.semantic_layer import check_data_availability, detect_ambiguous_query, detect_comparison_query, detect_data_inquiry_query
-        from utils.query_splitter import split_comparison_query
+        from utils.semantic_layer import check_data_availability, detect_ambiguous_query, detect_data_inquiry_query  # detect_comparison_query DISABLED
+        # from utils.query_splitter import split_comparison_query  # DISABLED FOR REDESIGN
 
         query = state["query"]
         context = state.get("context", "")
@@ -116,38 +116,41 @@ class WorkflowNodes:
                 "messages": state.get("messages", []) + [AIMessage(content=formatted_message)]
             }
 
-        # ========== CHECK 3: Comparison Query Detection ==========
-        # Check if query is asking for a comparison that can be parallelized
-        comparison_check = detect_comparison_query(query)
-
-        if comparison_check['is_comparison']:
-            logger.info(f"📊 Comparison detected: {comparison_check['comparison_type']} - {comparison_check['comparison_items']}")
-
-            # Try to split into parallel sub-queries
-            split_result = split_comparison_query(
-                original_query=query,
-                comparison_data=comparison_check,
-                user_id=state.get("user_id")
-            )
-
-            if split_result['can_split']:
-                logger.info(f"✂️ Query split into {len(split_result['sub_queries'])} parallel sub-queries")
-
-                return {
-                    "execution_plan": {
-                        "type": "comparison_parallel",
-                        "sub_queries": split_result['sub_queries'],
-                        "comparison_data": comparison_check,
-                        "merge_strategy": split_result['merge_strategy'],
-                        "comparison_type": split_result['comparison_type'],
-                        "comparison_dimension": split_result['comparison_dimension']
-                    },
-                    "next_step": "parallel_execute",  # Route to parallel execution
-                    "messages": [AIMessage(content=f"Executing parallel comparison query for {comparison_check['comparison_dimension']}...")]
-                }
-            else:
-                logger.warning(f"⚠️ Comparison detected but cannot split: {split_result.get('error', 'Unknown error')}")
-                # Fall through to regular execution
+        # ========== CHECK 3: COMPARISON DETECTION - DISABLED FOR REDESIGN ==========
+        # The comparison query detection and parallel execution logic is being rebuilt.
+        # Comparison queries will be handled through the regular SQL pipeline for now.
+        # ============================================================================
+        #
+        # comparison_check = detect_comparison_query(query)
+        #
+        # if comparison_check['is_comparison']:
+        #     logger.info(f"📊 Comparison detected: {comparison_check['comparison_type']} - {comparison_check['comparison_items']}")
+        #
+        #     # Try to split into parallel sub-queries
+        #     split_result = split_comparison_query(
+        #         original_query=query,
+        #         comparison_data=comparison_check,
+        #         user_id=state.get("user_id")
+        #     )
+        #
+        #     if split_result['can_split']:
+        #         logger.info(f"✂️ Query split into {len(split_result['sub_queries'])} parallel sub-queries")
+        #
+        #         return {
+        #             "execution_plan": {
+        #                 "type": "comparison_parallel",
+        #                 "sub_queries": split_result['sub_queries'],
+        #                 "comparison_data": comparison_check,
+        #                 "merge_strategy": split_result['merge_strategy'],
+        #                 "comparison_type": split_result['comparison_type'],
+        #                 "comparison_dimension": split_result['comparison_dimension']
+        #             },
+        #             "next_step": "parallel_execute",  # Route to parallel execution
+        #             "messages": [AIMessage(content=f"Executing parallel comparison query for {comparison_check['comparison_dimension']}...")]
+        #         }
+        #     else:
+        #         logger.warning(f"⚠️ Comparison detected but cannot split: {split_result.get('error', 'Unknown error')}")
+        #         # Fall through to regular execution
 
         # Format profile context for injection
         if user_profile:
@@ -982,220 +985,227 @@ class WorkflowNodes:
                         "messages": [AIMessage(content=error_msg)],
                     }
 
-    async def parallel_comparison_node(self, state: AgentState) -> Dict[str, Any]:
-        """
-        Execute comparison queries in parallel for significant speedup.
-
-        This node handles queries that compare two or more items (time periods,
-        content types, campaigns, etc.) by splitting them into independent
-        sub-queries and executing them concurrently.
-
-        Args:
-            state: Current agent state with execution_plan containing sub_queries
-
-        Returns:
-            Updated state with merged comparison results
-        """
-        import asyncio
-        from utils.parallel_executor import execute_queries_parallel, merge_comparison_results
-        import logging
-
-        logger = logging.getLogger(__name__)
-        user_id = state.get("user_id")
-        execution_plan = state.get("execution_plan", {})
-
-        if not user_id:
-            logger.error("No user_id in state for parallel comparison")
-            return {
-                "user_id": "",
-                "query": state.get("query", ""),
-                "agent_results": {
-                    "agent": "parallel_comparison",
-                    "result": "Error: No user_id provided",
-                    "status": "error"
-                },
-                "raw_data": "Error: No user_id provided",
-                "execution_status": "error",
-                "messages": [AIMessage(content="Error: No user_id provided")]
-            }
-
-        # Extract sub-queries from execution plan
-        sub_queries_data = execution_plan.get("sub_queries", [])
-        comparison_data = execution_plan.get("comparison_data", {})
-        merge_strategy = execution_plan.get("merge_strategy", "side_by_side")
-
-        if not sub_queries_data:
-            logger.error("No sub-queries found in execution plan for parallel comparison")
-            return {
-                "user_id": user_id,
-                "query": state["query"],
-                "agent_results": {
-                    "agent": "parallel_comparison",
-                    "result": "Error: No sub-queries to execute",
-                    "status": "error"
-                },
-                "raw_data": "Error: No sub-queries to execute",
-                "execution_status": "error",
-                "messages": [AIMessage(content="Error: No sub-queries to execute")]
-            }
-
-        logger.info(f"🔀 Executing {len(sub_queries_data)} comparison queries in parallel...")
-
-        # For each sub-query, we need to:
-        # 1. Generate SQL using sql_generator_node
-        # 2. Validate SQL using sql_validator_node
-        # 3. Execute in parallel
-
-        # Extract just the text queries and labels
-        queries_text = [sq['query'] for sq in sub_queries_data]
-        labels = [sq['label'] for sq in sub_queries_data]
-
-        # Generate SQL for each sub-query
-        sql_queries = []
-        for i, sub_query_data in enumerate(sub_queries_data):
-            sub_query_text = sub_query_data['query']
-            label = sub_query_data['label']
-
-            logger.info(f"📝 Generating SQL for sub-query {i+1}: {label}")
-
-            # Create a temporary state for this sub-query
-            temp_state = {
-                "user_id": user_id,
-                "query": sub_query_text,
-                "context": state.get("context", ""),
-                "user_profile": state.get("user_profile"),
-                "sub_query_filters": sub_query_data.get('filters', {})
-            }
-
-            # Generate SQL
-            sql_gen_result = self.sql_generator_node(temp_state)
-            generated_sql = sql_gen_result.get("generated_sql", "")
-
-            if not generated_sql:
-                logger.error(f"Failed to generate SQL for sub-query: {label}")
-                return {
-                    "user_id": user_id,
-                    "query": state["query"],
-                    "agent_results": {
-                        "agent": "parallel_comparison",
-                        "result": f"Error: Failed to generate SQL for {label}",
-                        "status": "error"
-                    },
-                    "raw_data": f"Error: Failed to generate SQL for {label}",
-                    "execution_status": "error",
-                    "messages": [AIMessage(content=f"Error: Failed to generate SQL for {label}")]
-                }
-
-            # Validate SQL
-            temp_state["generated_sql"] = generated_sql
-            validation_result = self.sql_validator_node(temp_state)
-
-            if not validation_result.get("sql_validation", {}).get("is_valid", False):
-                errors = validation_result.get("sql_validation", {}).get("errors", [])
-                logger.error(f"SQL validation failed for {label}: {errors}")
-                return {
-                    "user_id": user_id,
-                    "query": state["query"],
-                    "agent_results": {
-                        "agent": "parallel_comparison",
-                        "result": f"Error: SQL validation failed for {label}: {errors}",
-                        "status": "error"
-                    },
-                    "raw_data": f"Error: SQL validation failed for {label}",
-                    "execution_status": "error",
-                    "messages": [AIMessage(content=f"Error: SQL validation failed for {label}")]
-                }
-
-            sql_queries.append(generated_sql)
-            logger.info(f"✅ SQL generated and validated for {label}")
-
-        # Execute all queries in parallel
-        logger.info(f"⚡ Executing {len(sql_queries)} queries in parallel...")
-
-        try:
-            parallel_results = await execute_queries_parallel(
-                queries=sql_queries,
-                user_id=user_id,
-                labels=labels,
-                max_concurrent=5
-            )
-
-            logger.info(f"✅ Parallel execution complete: {parallel_results['speedup']:.1f}x speedup ({parallel_results['total_duration']:.2f}s)")
-
-            # Merge results into comparison format
-            comparison_result = merge_comparison_results(
-                parallel_results=parallel_results,
-                comparison_data=comparison_data
-            )
-
-            # Format the comparison result as a user-friendly message
-            if comparison_result.get('error'):
-                result_message = comparison_result['summary']
-            else:
-                # Build formatted comparison output
-                items_compared = comparison_result['items_compared']
-                comparison_table = comparison_result['comparison_table']
-                deltas = comparison_result['deltas']
-                summary = comparison_result['summary']
-
-                # Format as markdown table
-                result_parts = []
-                result_parts.append(f"**Comparison: {' vs '.join(items_compared)}**\n")
-                result_parts.append(summary)
-                result_parts.append(f"\n**Performance Metrics:**")
-
-                # Build table
-                if comparison_table:
-                    for metric, values in comparison_table.items():
-                        value_strs = [f"{label}: {values.get(label, 'N/A')}" for label in items_compared]
-                        result_parts.append(f"- {metric}: " + " | ".join(value_strs))
-
-                        # Add delta if available
-                        if metric in deltas:
-                            delta_info = deltas[metric]
-                            result_parts.append(f"  → Change: {delta_info['formatted']}")
-
-                result_parts.append(f"\n⚡ Query speedup: {parallel_results['speedup']:.1f}x faster ({parallel_results['total_duration']:.2f}s)")
-
-                result_message = "\n".join(result_parts)
-
-            return {
-                "user_id": user_id,
-                "query": state["query"],
-                "agent_results": {
-                    "agent": "parallel_comparison",
-                    "result": result_message,
-                    "comparison_result": comparison_result,
-                    "parallel_stats": {
-                        "speedup": parallel_results['speedup'],
-                        "total_duration": parallel_results['total_duration'],
-                        "query_count": parallel_results['query_count']
-                    },
-                    "status": "completed"
-                },
-                "raw_data": comparison_result,
-                "execution_status": "success",
-                "messages": [AIMessage(content=result_message)]
-            }
-
-        except Exception as e:
-            import traceback
-            error_msg = f"Error executing parallel comparison: {str(e)}"
-            stack_trace = traceback.format_exc()
-            logger.error(error_msg)
-            logger.error(stack_trace)
-
-            return {
-                "user_id": user_id,
-                "query": state["query"],
-                "agent_results": {
-                    "agent": "parallel_comparison",
-                    "result": error_msg,
-                    "status": "error",
-                    "error_details": str(e)
-                },
-                "raw_data": error_msg,
-                "execution_status": "error",
-                "error_message": "Failed to execute comparison query. Please try rephrasing your question.",
-                "messages": [AIMessage(content=error_msg)]
-            }
+    # ============================================================================
+    # PARALLEL COMPARISON NODE - DISABLED FOR COMPLETE REDESIGN
+    # ============================================================================
+    # This entire node is being redesigned from scratch. The current implementation
+    # has architectural issues and needs to be rebuilt with a better approach.
+    # ============================================================================
+    #
+    # async def parallel_comparison_node(self, state: AgentState) -> Dict[str, Any]:
+    #     """
+    #     Execute comparison queries in parallel for significant speedup.
+    #
+    #     This node handles queries that compare two or more items (time periods,
+    #     content types, campaigns, etc.) by splitting them into independent
+    #     sub-queries and executing them concurrently.
+    #
+    #     Args:
+    #         state: Current agent state with execution_plan containing sub_queries
+    #
+    #     Returns:
+    #         Updated state with merged comparison results
+    #     """
+    #     import asyncio
+    #     from utils.parallel_executor import execute_queries_parallel, merge_comparison_results
+    #     import logging
+    #
+    #     logger = logging.getLogger(__name__)
+    #     user_id = state.get("user_id")
+    #     execution_plan = state.get("execution_plan", {})
+    #
+    #     if not user_id:
+    #         logger.error("No user_id in state for parallel comparison")
+    #         return {
+    #             "user_id": "",
+    #             "query": state.get("query", ""),
+    #             "agent_results": {
+    #                 "agent": "parallel_comparison",
+    #                 "result": "Error: No user_id provided",
+    #                 "status": "error"
+    #             },
+    #             "raw_data": "Error: No user_id provided",
+    #             "execution_status": "error",
+    #             "messages": [AIMessage(content="Error: No user_id provided")]
+    #         }
+    #
+    #     # Extract sub-queries from execution plan
+    #     sub_queries_data = execution_plan.get("sub_queries", [])
+    #     comparison_data = execution_plan.get("comparison_data", {})
+    #     merge_strategy = execution_plan.get("merge_strategy", "side_by_side")
+    #
+    #     if not sub_queries_data:
+    #         logger.error("No sub-queries found in execution plan for parallel comparison")
+    #         return {
+    #             "user_id": user_id,
+    #             "query": state["query"],
+    #             "agent_results": {
+    #                 "agent": "parallel_comparison",
+    #                 "result": "Error: No sub-queries to execute",
+    #                 "status": "error"
+    #             },
+    #             "raw_data": "Error: No sub-queries to execute",
+    #             "execution_status": "error",
+    #             "messages": [AIMessage(content="Error: No sub-queries to execute")]
+    #         }
+    #
+    #     logger.info(f"🔀 Executing {len(sub_queries_data)} comparison queries in parallel...")
+    #
+    #     # For each sub-query, we need to:
+    #     # 1. Generate SQL using sql_generator_node
+    #     # 2. Validate SQL using sql_validator_node
+    #     # 3. Execute in parallel
+    #
+    #     # Extract just the text queries and labels
+    #     queries_text = [sq['query'] for sq in sub_queries_data]
+    #     labels = [sq['label'] for sq in sub_queries_data]
+    #
+    #     # Generate SQL for each sub-query
+    #     sql_queries = []
+    #     for i, sub_query_data in enumerate(sub_queries_data):
+    #         sub_query_text = sub_query_data['query']
+    #         label = sub_query_data['label']
+    #
+    #         logger.info(f"📝 Generating SQL for sub-query {i+1}: {label}")
+    #
+    #         # Create a temporary state for this sub-query
+    #         temp_state = {
+    #             "user_id": user_id,
+    #             "query": sub_query_text,
+    #             "context": state.get("context", ""),
+    #             "user_profile": state.get("user_profile"),
+    #             "sub_query_filters": sub_query_data.get('filters', {})
+    #         }
+    #
+    #         # Generate SQL
+    #         sql_gen_result = self.sql_generator_node(temp_state)
+    #         generated_sql = sql_gen_result.get("generated_sql", "")
+    #
+    #         if not generated_sql:
+    #             logger.error(f"Failed to generate SQL for sub-query: {label}")
+    #             return {
+    #                 "user_id": user_id,
+    #                 "query": state["query"],
+    #                 "agent_results": {
+    #                     "agent": "parallel_comparison",
+    #                     "result": f"Error: Failed to generate SQL for {label}",
+    #                     "status": "error"
+    #                 },
+    #                 "raw_data": f"Error: Failed to generate SQL for {label}",
+    #                 "execution_status": "error",
+    #                 "messages": [AIMessage(content=f"Error: Failed to generate SQL for {label}")]
+    #             }
+    #
+    #         # Validate SQL
+    #         temp_state["generated_sql"] = generated_sql
+    #         validation_result = self.sql_validator_node(temp_state)
+    #
+    #         if not validation_result.get("sql_validation", {}).get("is_valid", False):
+    #             errors = validation_result.get("sql_validation", {}).get("errors", [])
+    #             logger.error(f"SQL validation failed for {label}: {errors}")
+    #             return {
+    #                 "user_id": user_id,
+    #                 "query": state["query"],
+    #                 "agent_results": {
+    #                     "agent": "parallel_comparison",
+    #                     "result": f"Error: SQL validation failed for {label}: {errors}",
+    #                     "status": "error"
+    #                 },
+    #                 "raw_data": f"Error: SQL validation failed for {label}",
+    #                 "execution_status": "error",
+    #                 "messages": [AIMessage(content=f"Error: SQL validation failed for {label}")]
+    #             }
+    #
+    #         sql_queries.append(generated_sql)
+    #         logger.info(f"✅ SQL generated and validated for {label}")
+    #
+    #     # Execute all queries in parallel
+    #     logger.info(f"⚡ Executing {len(sql_queries)} queries in parallel...")
+    #
+    #     try:
+    #         parallel_results = await execute_queries_parallel(
+    #             queries=sql_queries,
+    #             user_id=user_id,
+    #             labels=labels,
+    #             max_concurrent=5
+    #         )
+    #
+    #         logger.info(f"✅ Parallel execution complete: {parallel_results['speedup']:.1f}x speedup ({parallel_results['total_duration']:.2f}s)")
+    #
+    #         # Merge results into comparison format
+    #         comparison_result = merge_comparison_results(
+    #             parallel_results=parallel_results,
+    #             comparison_data=comparison_data
+    #         )
+    #
+    #         # Format the comparison result as a user-friendly message
+    #         if comparison_result.get('error'):
+    #             result_message = comparison_result['summary']
+    #         else:
+    #             # Build formatted comparison output
+    #             items_compared = comparison_result['items_compared']
+    #             comparison_table = comparison_result['comparison_table']
+    #             deltas = comparison_result['deltas']
+    #             summary = comparison_result['summary']
+    #
+    #             # Format as markdown table
+    #             result_parts = []
+    #             result_parts.append(f"**Comparison: {' vs '.join(items_compared)}**\n")
+    #             result_parts.append(summary)
+    #             result_parts.append(f"\n**Performance Metrics:**")
+    #
+    #             # Build table
+    #             if comparison_table:
+    #                 for metric, values in comparison_table.items():
+    #                     value_strs = [f"{label}: {values.get(label, 'N/A')}" for label in items_compared]
+    #                     result_parts.append(f"- {metric}: " + " | ".join(value_strs))
+    #
+    #                     # Add delta if available
+    #                     if metric in deltas:
+    #                         delta_info = deltas[metric]
+    #                         result_parts.append(f"  → Change: {delta_info['formatted']}")
+    #
+    #             result_parts.append(f"\n⚡ Query speedup: {parallel_results['speedup']:.1f}x faster ({parallel_results['total_duration']:.2f}s)")
+    #
+    #             result_message = "\n".join(result_parts)
+    #
+    #         return {
+    #             "user_id": user_id,
+    #             "query": state["query"],
+    #             "agent_results": {
+    #                 "agent": "parallel_comparison",
+    #                 "result": result_message,
+    #                 "comparison_result": comparison_result,
+    #                 "parallel_stats": {
+    #                     "speedup": parallel_results['speedup'],
+    #                     "total_duration": parallel_results['total_duration'],
+    #                     "query_count": parallel_results['query_count']
+    #                 },
+    #                 "status": "completed"
+    #             },
+    #             "raw_data": comparison_result,
+    #             "execution_status": "success",
+    #             "messages": [AIMessage(content=result_message)]
+    #         }
+    #
+    #     except Exception as e:
+    #         import traceback
+    #         error_msg = f"Error executing parallel comparison: {str(e)}"
+    #         stack_trace = traceback.format_exc()
+    #         logger.error(error_msg)
+    #         logger.error(stack_trace)
+    #
+    #         return {
+    #             "user_id": user_id,
+    #             "query": state["query"],
+    #             "agent_results": {
+    #                 "agent": "parallel_comparison",
+    #                 "result": error_msg,
+    #                 "status": "error",
+    #                 "error_details": str(e)
+    #             },
+    #             "raw_data": error_msg,
+    #             "execution_status": "error",
+    #             "error_message": "Failed to execute comparison query. Please try rephrasing your question.",
+    #             "messages": [AIMessage(content=error_msg)]
+    #         }
