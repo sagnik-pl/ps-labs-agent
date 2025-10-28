@@ -390,7 +390,7 @@ async def process_query_with_progress(
                         interpretation_validation = node_output.get("interpretation_validation", {})
                         await manager.send_debug(session_id, "interpretation_validator", {
                             "is_valid": interpretation_validation.get("is_valid", False),
-                            "validation_score": interpretation_validation.get("validation_score", 0),
+                            "validation_score": interpretation_validation.get("quality_score", 0),  # Fixed: use quality_score field from validator
                             "feedback": interpretation_validation.get("feedback", ""),
                             "next_step": node_output.get("next_step", ""),
                         })
