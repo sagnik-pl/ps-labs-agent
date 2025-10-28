@@ -1258,27 +1258,38 @@ Apply criterion #9 (Multi-Intent Synthesis Quality) when validating.
 
         logger.info(f"Detected data streams: {relevant_streams}")
 
-        # Get all tables for relevant streams with their metadata
+        # Get all tables for relevant streams with detailed schema information
         all_tables_info = []
+        detailed_schemas = []
+
         for stream in relevant_streams:
             tables = semantic_layer.list_tables_by_data_stream(stream)
             for table_name in tables:
                 table_schema = semantic_layer.get_table_schema(table_name)
                 if table_schema:
+                    # High-level info for selection overview
                     table_info = {
                         'name': table_name,
                         'description': table_schema.get('description', ''),
                         'use_cases': table_schema.get('use_cases', []),
-                        'data_stream_type': table_schema.get('data_stream_type', ''),
+                        'data_stream_type': table_schema.get('stream_type', ''),  # Updated field name
                         'category': table_schema.get('category', ''),
                         'columns_summary': list(table_schema.get('columns', {}).keys())[:15]  # First 15 columns
                     }
                     all_tables_info.append(table_info)
 
-        # Format tables for LLM selection (grouped by data stream)
-        table_schemas_formatted = semantic_layer.format_tables_for_selection(all_tables_info)
+                    # Detailed schema with examples, filters, joins for SQL generation
+                    detailed_schema = semantic_layer.get_schema_for_sql_gen(table_name)
+                    detailed_schemas.append(detailed_schema)
 
-        logger.info(f"Prepared {len(all_tables_info)} tables for LLM selection")
+        # Format schemas for SQL generation prompt
+        # Combine both overview and detailed schemas
+        overview = semantic_layer.format_tables_for_selection(all_tables_info)
+        detailed = "\n\n---\n\n".join(detailed_schemas)
+
+        table_schemas_formatted = f"{overview}\n\n{'='*70}\n# DETAILED SCHEMAS\n{'='*70}\n\n{detailed}"
+
+        logger.info(f"Prepared {len(all_tables_info)} tables with detailed schemas for SQL generation")
 
         # ========== STEP 2: Multi-Intent Context Handling ==========
         # Check if this is part of a multi-intent query decomposition

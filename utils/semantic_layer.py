@@ -282,7 +282,7 @@ class SemanticLayer:
             'instagram'
         """
         table = self.get_table_schema(table_name)
-        return table.get('data_stream_type') if table else None
+        return table.get('stream_type') if table else None  # Updated field name
 
     def list_tables_by_data_stream(self, data_stream_type: str) -> List[str]:
         """
@@ -301,7 +301,7 @@ class SemanticLayer:
         """
         return [
             table_name for table_name, table_schema in self.schemas.items()
-            if table_schema.get('data_stream_type') == data_stream_type
+            if table_schema.get('stream_type') == data_stream_type  # Updated field name
         ]
 
     def get_available_data_streams(self) -> List[str]:
@@ -317,7 +317,7 @@ class SemanticLayer:
         """
         data_streams = set()
         for table_schema in self.schemas.values():
-            stream_type = table_schema.get('data_stream_type')
+            stream_type = table_schema.get('stream_type')  # Updated field name
             if stream_type:
                 data_streams.add(stream_type)
         return sorted(list(data_streams))
@@ -449,13 +449,16 @@ class SemanticLayer:
 
     def get_schema_for_sql_gen(self, table_name: str) -> str:
         """
-        Format schema information for SQL generation prompt.
+        Format schema information for SQL generation prompt with rich metadata.
+
+        Includes: columns with examples, common filters, joins, and example queries
+        to help LLM generate accurate SQL.
 
         Args:
             table_name: Name of the table
 
         Returns:
-            Formatted schema string for prompt
+            Formatted schema string with rich metadata for prompt
         """
         table = self.get_table_schema(table_name)
         if not table:
@@ -463,39 +466,111 @@ class SemanticLayer:
 
         lines = [
             f"**{table_name}**",
-            f"Description: {table.get('description', 'No description')}",
+            f"**Stream**: {table.get('stream_type', 'unknown')}.{table.get('stream_name', '')}",
+            f"**Description**: {table.get('description', 'No description')}",
             "",
-            "Columns:"
+            "**Columns**:"
         ]
 
+        # Format columns with enhanced metadata
         columns = table.get('columns', {})
         for col_name, col_def in columns.items():
+            # Skip system columns in detailed output (they're less relevant for query writing)
+            if col_def.get('system_column') and col_name not in ['user_id', 'year', 'month', 'day']:
+                continue
+
             col_type = col_def.get('type', 'unknown')
             col_desc = col_def.get('description', '')
 
-            line = f"  - {col_name} ({col_type})"
+            line = f"  - **{col_name}** ({col_type})"
             if col_desc:
                 line += f": {col_desc}"
 
-            # Add important notes
+            # Add metadata flags
+            flags = []
             if col_def.get('filter_required'):
-                line += " [REQUIRED: Must filter by this column]"
+                flags.append("FILTER_REQUIRED")
             if col_def.get('important'):
-                line += " [IMPORTANT]"
+                flags.append("IMPORTANT")
+            if col_def.get('aggregatable'):
+                flags.append("AGGREGATABLE")
+            if col_def.get('partition_key'):
+                flags.append("PARTITION_KEY")
+            if col_def.get('primary_key'):
+                flags.append("PRIMARY_KEY")
+            if col_def.get('only_for_media_type'):
+                flags.append(f"ONLY_FOR_{col_def['only_for_media_type']}")
 
-            # Add column-specific notes (e.g., "Column name is 'saved' not 'saves'")
-            if col_def.get('notes'):
-                line += f" [NOTE: {col_def['notes']}]"
+            if flags:
+                line += f" [{', '.join(flags)}]"
 
             lines.append(line)
 
-        # Add notes
+            # Add example values (very helpful for LLM)
+            if col_def.get('example_values'):
+                examples = col_def['example_values'][:3]  # Show first 3 examples
+                lines.append(f"    Examples: {', '.join(map(str, examples))}")
+
+            # Add distinct values for enums
+            if col_def.get('distinct_values'):
+                distinct = col_def['distinct_values']
+                lines.append(f"    Values: {', '.join(map(str, distinct))}")
+
+            # Add common filters
+            if col_def.get('common_filters'):
+                filters = col_def['common_filters'][:2]  # Show first 2 filters
+                lines.append(f"    Filters: {' | '.join(filters)}")
+
+            # Add usage in metrics
+            if col_def.get('used_in_metrics'):
+                metrics = col_def['used_in_metrics']
+                lines.append(f"    Used in: {', '.join(metrics)}")
+
+            # Add column-specific notes
+            if col_def.get('notes'):
+                lines.append(f"    ⚠️  {col_def['notes']}")
+
+            lines.append("")  # Blank line between columns
+
+        # Add common joins
+        joins = table.get('common_joins', [])
+        if joins:
+            lines.append("**Common Joins**:")
+            for join in joins:
+                join_table = join.get('table', '')
+                join_type = join.get('type', 'JOIN')
+                join_desc = join.get('description', '')
+                join_example = join.get('example', '')
+
+                lines.append(f"  - {join_type} {join_table}")
+                if join_desc:
+                    lines.append(f"    {join_desc}")
+                if join_example:
+                    lines.append(f"    Example: {join_example}")
+                lines.append("")
+
+        # Add important notes
         notes = table.get('important_notes', [])
         if notes:
-            lines.append("")
-            lines.append("Important Notes:")
+            lines.append("**Important Notes**:")
             for note in notes:
                 lines.append(f"  - {note}")
+            lines.append("")
+
+        # Add example queries (very helpful!)
+        examples = table.get('example_queries', [])
+        if examples:
+            lines.append("**Example Queries**:")
+            for i, example in enumerate(examples[:2], 1):  # Show first 2 examples
+                desc = example.get('description', '')
+                sql = example.get('sql', '').strip()
+                lines.append(f"  {i}. {desc}")
+                if sql:
+                    # Indent SQL for better readability
+                    sql_lines = sql.split('\n')
+                    for sql_line in sql_lines[:10]:  # Limit to 10 lines per example
+                        lines.append(f"     {sql_line}")
+                lines.append("")
 
         return "\n".join(lines)
 
