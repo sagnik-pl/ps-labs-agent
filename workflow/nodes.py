@@ -15,29 +15,45 @@ class WorkflowNodes:
     """Collection of node functions for the agent workflow graph."""
 
     def __init__(self):
-        """Initialize workflow nodes with OpenAI."""
-        # Default model for most nodes (planning, assessment, validation, formatting)
-        self.llm = ChatOpenAI(
-            model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: Cost-efficient for structured tasks
-            openai_api_key=settings.openai_api_key,
-            temperature=0,
-        )
-
-        # Premium model for SQL generation (complex reasoning, table selection, joins)
-        self.llm_sql = ChatOpenAI(
-            model="gpt-5-2025-08-07",  # GPT-5: Better reasoning for SQL generation
-            openai_api_key=settings.openai_api_key,
-            temperature=0,
-        )
-
-        # Premium model for data interpretation (user-facing quality, 11 knowledge bases)
-        self.llm_interpreter = ChatOpenAI(
-            model="gpt-5-2025-08-07",  # GPT-5: Deep e-commerce analysis and insights
-            openai_api_key=settings.openai_api_key,
-            temperature=0,
-        )
-
+        """Initialize workflow nodes with lazy-loaded LLM instances."""
+        # Lazy-load LLMs to prevent startup delays
+        self._llm = None
+        self._llm_sql = None
+        self._llm_interpreter = None
         self.prompt_manager = prompt_manager
+
+    @property
+    def llm(self):
+        """Lazy-load default LLM for most nodes (planning, assessment, validation, formatting)."""
+        if self._llm is None:
+            self._llm = ChatOpenAI(
+                model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: Cost-efficient for structured tasks
+                openai_api_key=settings.openai_api_key,
+                temperature=0,
+            )
+        return self._llm
+
+    @property
+    def llm_sql(self):
+        """Lazy-load premium model for SQL generation (complex reasoning, table selection, joins)."""
+        if self._llm_sql is None:
+            self._llm_sql = ChatOpenAI(
+                model="gpt-5-2025-08-07",  # GPT-5: Better reasoning for SQL generation
+                openai_api_key=settings.openai_api_key,
+                temperature=0,
+            )
+        return self._llm_sql
+
+    @property
+    def llm_interpreter(self):
+        """Lazy-load premium model for data interpretation (user-facing quality, 11 knowledge bases)."""
+        if self._llm_interpreter is None:
+            self._llm_interpreter = ChatOpenAI(
+                model="gpt-5-2025-08-07",  # GPT-5: Deep e-commerce analysis and insights
+                openai_api_key=settings.openai_api_key,
+                temperature=0,
+            )
+        return self._llm_interpreter
 
     def _detect_time_window(self, query: str) -> Dict[str, Any]:
         """
