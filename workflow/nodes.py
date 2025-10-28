@@ -16,11 +16,27 @@ class WorkflowNodes:
 
     def __init__(self):
         """Initialize workflow nodes with OpenAI."""
+        # Default model for most nodes (planning, assessment, validation, formatting)
         self.llm = ChatOpenAI(
-            model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: 2x better reasoning, 83% cost reduction, 30% faster vs gpt-4o
+            model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: Cost-efficient for structured tasks
             openai_api_key=settings.openai_api_key,
             temperature=0,
         )
+
+        # Premium model for SQL generation (complex reasoning, table selection, joins)
+        self.llm_sql = ChatOpenAI(
+            model="gpt-5-2025-08-07",  # GPT-5: Better reasoning for SQL generation
+            openai_api_key=settings.openai_api_key,
+            temperature=0,
+        )
+
+        # Premium model for data interpretation (user-facing quality, 11 knowledge bases)
+        self.llm_interpreter = ChatOpenAI(
+            model="gpt-5-2025-08-07",  # GPT-5: Deep e-commerce analysis and insights
+            openai_api_key=settings.openai_api_key,
+            temperature=0,
+        )
+
         self.prompt_manager = prompt_manager
 
     def _detect_time_window(self, query: str) -> Dict[str, Any]:
@@ -992,7 +1008,7 @@ Now synthesize the sub-query results above following these requirements.
 """
 
         messages = [HumanMessage(content=prompt)]
-        response = self.llm.invoke(messages)
+        response = self.llm_interpreter.invoke(messages)  # Use GPT-5 for data interpretation
 
         interpretation = response.content
 
@@ -1361,7 +1377,7 @@ This query is part of a larger multi-intent question that was decomposed into fo
         )
 
         messages = [HumanMessage(content=prompt)]
-        response = self.llm.invoke(messages)
+        response = self.llm_sql.invoke(messages)  # Use GPT-5 for SQL generation
 
         # Extract SQL query from response (remove any markdown formatting)
         generated_sql = response.content.strip()
