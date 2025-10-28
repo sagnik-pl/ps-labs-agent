@@ -33,8 +33,7 @@ def generate_conversation_title(query: str) -> str:
                     "content": f"Generate a title for this query: {query}"
                 }
             ],
-            max_tokens=20,
-            temperature=0.7
+            max_tokens=20
         )
 
         title = response.choices[0].message.content.strip()
