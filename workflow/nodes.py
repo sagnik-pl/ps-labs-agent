@@ -2,7 +2,7 @@
 Node functions for the LangGraph agent workflow.
 Each node represents a step in the multi-agent processing pipeline.
 """
-from typing import Dict, Any
+from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage
 from workflow.state import AgentState
