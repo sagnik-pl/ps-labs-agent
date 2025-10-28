@@ -109,8 +109,10 @@ prompt: |
 
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
   - **Time Window Default**: If the user's question does NOT specify a time period, date range, or timeframe:
-    - ✅ DEFAULT to last 30 days using: `AND timestamp >= date_add('day', -30, current_date)`
-    - This applies to all time-series queries (media posts, insights, performance metrics)
+    - ✅ DEFAULT to last 30 days - BUT use the CORRECT date column for each table:
+      * instagram_media & instagram_media_insights: `AND timestamp >= date_add('day', -30, current_date)`
+      * instagram_user_insights: `AND date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -30, current_date)`
+    - CRITICAL: instagram_user_insights uses 'date' column (NOT 'timestamp')
     - If user specifies a time period (e.g., "last week", "this month"), use that instead
   - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
     join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`

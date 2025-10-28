@@ -8,7 +8,7 @@ from workflow.state import AgentState
 from workflow.nodes import WorkflowNodes
 
 
-def create_agent_workflow(checkpointer=None):
+def create_agent_workflow(checkpointer=None, websocket_manager=None, session_id=None):
     """
     Create the LangGraph agent workflow.
 
@@ -66,12 +66,14 @@ def create_agent_workflow(checkpointer=None):
 
     Args:
         checkpointer: Optional checkpointer for state persistence
+        websocket_manager: Optional WebSocket manager for nested node progress updates
+        session_id: Optional session ID for WebSocket progress tracking
 
     Returns:
         Compiled LangGraph workflow
     """
-    # Initialize nodes
-    nodes = WorkflowNodes()
+    # Initialize nodes with WebSocket support for nested progress
+    nodes = WorkflowNodes(websocket_manager=websocket_manager, session_id=session_id)
 
     # Create graph
     workflow = StateGraph(AgentState)

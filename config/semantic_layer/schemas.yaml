@@ -675,7 +675,7 @@ tables:
           - "SUBSTR(date, 1, 10) >= '2024-01-01'"
           - "SUBSTR(date, 1, 10) BETWEEN '2024-01-01' AND '2024-12-31'"
           - "date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -30, current_date)"
-        notes: "Daily snapshot - one row per day. Use for time series analysis. CRITICAL: date is stored as STRING with timestamp (YYYY-MM-DD HH:MM:SS), so use SUBSTR(date, 1, 10) to extract YYYY-MM-DD portion before date comparisons, or use date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') for date functions."
+        notes: "Daily snapshot - one row per day. Use for time series analysis. CRITICAL: This table uses 'date' column (NOT 'timestamp'). instagram_user_insights has ONLY 'date', NOT 'timestamp'. For date filtering on instagram_user_insights, always use the 'date' column with SUBSTR(date, 1, 10) to extract YYYY-MM-DD portion before date comparisons."
 
       reach:
         name: "reach"

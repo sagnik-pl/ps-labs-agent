@@ -300,8 +300,11 @@ async def process_query_with_progress(
             "sql_retry_count": 0,
         }
 
-        # Create workflow
-        workflow = create_agent_workflow()
+        # Create workflow with WebSocket support for nested node progress
+        workflow = create_agent_workflow(
+            websocket_manager=manager,
+            session_id=session_id
+        )
 
         # Configure checkpointing
         config = {

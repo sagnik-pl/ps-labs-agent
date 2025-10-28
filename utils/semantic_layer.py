@@ -1191,14 +1191,20 @@ class SemanticLayer:
         mentions_platform = any(platform in query_lower for platform in platform_keywords)
 
         # If it's a vague status query about a platform (e.g., "how's insta?", "how is instagram?", "hows insta doing again?")
-        # Trigger if: vague phrase + platform mention + reasonably short (≤8 words) + no specific metrics mentioned
-        is_reasonably_short = len(words) <= 8
+        # Trigger if: vague phrase + platform mention + very short (≤6 words) + no specific intent + no time window
+        is_very_short_vague = len(words) <= 6
 
-        # Check if specific metrics are mentioned (if so, it's not ambiguous)
+        # Check if specific metrics or intents are mentioned (if so, it's not ambiguous)
         specific_metrics = ['engagement', 'reach', 'impressions', 'followers', 'likes', 'comments', 'saves', 'shares', 'revenue', 'sales', 'conversions']
+        performance_intents = ['performing', 'performance', 'trending', 'growing', 'declining', 'changing', 'improving', 'worsening']
         has_specific_metric = any(metric in query_lower for metric in specific_metrics)
+        has_performance_intent = any(intent in query_lower for intent in performance_intents)
 
-        if has_vague_phrase and mentions_platform and is_reasonably_short and not has_specific_metric:
+        # Check if time window is mentioned (indicates specific intent)
+        time_keywords = ['last', 'past', 'this', 'days', 'week', 'month', 'year', 'over', 'period', 'since']
+        has_time_window = any(kw in query_lower for kw in time_keywords)
+
+        if has_vague_phrase and mentions_platform and is_very_short_vague and not has_specific_metric and not has_performance_intent and not has_time_window:
             # User is asking "how's [platform]?" without specifying what they want to know
             clarification_data = {
                 "question": "I can help analyze your Instagram performance! What would you like to know specifically?",

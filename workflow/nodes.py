@@ -14,13 +14,44 @@ import json
 class WorkflowNodes:
     """Collection of node functions for the agent workflow graph."""
 
-    def __init__(self):
-        """Initialize workflow nodes with lazy-loaded LLM instances."""
+    def __init__(self, websocket_manager=None, session_id=None):
+        """
+        Initialize workflow nodes with lazy-loaded LLM instances.
+
+        Args:
+            websocket_manager: Optional WebSocket manager for progress updates
+            session_id: Optional session ID for WebSocket progress tracking
+        """
         # Lazy-load LLMs to prevent startup delays
         self._llm = None
         self._llm_sql = None
         self._llm_interpreter = None
         self.prompt_manager = prompt_manager
+
+        # WebSocket support for nested node progress
+        self.websocket_manager = websocket_manager
+        self.session_id = session_id
+
+    async def _emit_progress(self, node_name: str, retry_count: int = 0):
+        """
+        Emit progress update via WebSocket if available.
+
+        Args:
+            node_name: Name of the node being executed
+            retry_count: Number of retries for this node
+        """
+        if self.websocket_manager and self.session_id:
+            try:
+                await self.websocket_manager.send_progress(
+                    self.session_id,
+                    node_name,
+                    retry_count
+                )
+            except Exception as e:
+                # Don't fail the workflow if progress emission fails
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Failed to emit progress for {node_name}: {e}")
 
     @property
     def llm(self):
@@ -615,22 +646,27 @@ class WorkflowNodes:
 
             # Step 3: Execute SQL pipeline
             # 3a. SQL Generator
+            logger.info(f"⚙️  {sq_id}: sql_generator")
             gen_result = self.sql_generator_node(temp_state)
             temp_state.update(gen_result)
 
             # 3b. SQL Validator
+            logger.info(f"⚙️  {sq_id}: sql_validator")
             val_result = self.sql_validator_node(temp_state)
             temp_state.update(val_result)
 
             # 3c. Handle validation retry if needed
             if temp_state.get("next_step") == "retry_sql":
                 logger.warning(f"⚠️ {sq_id} SQL validation failed, retrying...")
+                logger.info(f"⚙️  {sq_id}: sql_generator (retry)")
                 gen_result = self.sql_generator_node(temp_state)
                 temp_state.update(gen_result)
+                logger.info(f"⚙️  {sq_id}: sql_validator (retry)")
                 val_result = self.sql_validator_node(temp_state)
                 temp_state.update(val_result)
 
             # 3d. SQL Executor
+            logger.info(f"⚙️  {sq_id}: sql_executor")
             exec_result = self.sql_executor_node(temp_state)
             temp_state.update(exec_result)
 
