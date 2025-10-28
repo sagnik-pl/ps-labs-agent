@@ -1505,6 +1505,23 @@ This query is part of a larger multi-intent question that was decomposed into fo
 
                 semantic_validation.append(error_msg)
 
+        # ========== EARLY RETURN: Invalid Columns Detected ==========
+        # If semantic layer detected invalid columns, immediately fail validation
+        # Don't rely on LLM validator - semantic layer is authoritative
+        if semantic_validation:
+            logger.warning(f"⚠️ SQL validation failed, retrying...")
+            return {
+                "sql_validation": {
+                    "is_valid": False,
+                    "validation_score": 0,
+                    "feedback": "\n".join(semantic_validation),
+                    "reasoning": "Invalid columns detected by semantic layer"
+                },
+                "sql_validation_feedback": "\n".join(semantic_validation),
+                "sql_retry_count": state.get("sql_retry_count", 0) + 1,
+                "next_step": "retry_sql"
+            }
+
         # ========== STEP 5: Compile Validation Feedback ==========
         feedback_parts = []
 
