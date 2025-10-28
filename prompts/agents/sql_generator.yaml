@@ -192,6 +192,10 @@ prompt: |
   - Markdown code fences (```sql)
   - Explanations
   - Comments (unless essential)
+  - Database or catalog prefixes in table names (e.g., DON'T use "ps_labs_processed_catalog.instagram_media", just use "instagram_media")
   - Anything except the SQL query itself
+
+  **CRITICAL**: The Athena connection is already configured with the correct database.
+  Use table names directly WITHOUT any database/catalog prefix (e.g., "instagram_media", NOT "database.instagram_media").
 
   The query will be validated before execution, so ensure it's correct.
