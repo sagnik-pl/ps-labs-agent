@@ -134,7 +134,7 @@ tables:
       year:
         name: "year"
         type: "string"
-        description: "Partition column: year of post publication (YYYY format)"
+        description: "Partition column: ETL processing year (YYYY format) - NOT post publication year"
         example_values: ["2024", "2023", "2025"]
         required: true
         filter_required: false
@@ -144,14 +144,14 @@ tables:
         partition_key: true
         system_column: true
         common_filters:
-          - "year = '2024'"
-          - "year IN ('2023', '2024')"
-        notes: "Use with month and day for partition pruning to improve query performance."
+          - "-- AVOID: Using year for date filtering logic"
+          - "-- Use timestamp column instead for filtering by post publication date"
+        notes: "⚠️ CRITICAL: This represents when Glue ETL processed the data, NOT when the post was published. NEVER use this for date filtering logic. Use instagram_media.timestamp for filtering by post publication date. This column is ONLY for ETL metadata and partition pruning optimization."
 
       month:
         name: "month"
         type: "string"
-        description: "Partition column: month of post publication (MM format, zero-padded)"
+        description: "Partition column: ETL processing month (MM format, zero-padded) - NOT post publication month"
         example_values: ["01", "06", "12"]
         required: true
         filter_required: false
@@ -161,14 +161,14 @@ tables:
         partition_key: true
         system_column: true
         common_filters:
-          - "month = '01'"
-          - "year = '2024' AND month IN ('01', '02', '03')"
-        notes: "Always zero-padded (01-12). Use with year and day for efficient partition filtering."
+          - "-- AVOID: Using month for date filtering logic"
+          - "-- Use timestamp column instead for filtering by post publication date"
+        notes: "⚠️ CRITICAL: This represents when Glue ETL processed the data, NOT when the post was published. NEVER use this for date filtering logic. Use instagram_media.timestamp for filtering by post publication date. Always zero-padded (01-12). This column is ONLY for ETL metadata."
 
       day:
         name: "day"
         type: "string"
-        description: "Partition column: day of post publication (DD format, zero-padded)"
+        description: "Partition column: ETL processing day (DD format, zero-padded) - NOT post publication day"
         example_values: ["01", "15", "31"]
         required: true
         filter_required: false
@@ -178,9 +178,9 @@ tables:
         partition_key: true
         system_column: true
         common_filters:
-          - "day = '15'"
-          - "year = '2024' AND month = '01' AND day >= '15'"
-        notes: "Always zero-padded (01-31). Use with year and month for maximum query performance."
+          - "-- AVOID: Using day for date filtering logic"
+          - "-- Use timestamp column instead for filtering by post publication date"
+        notes: "⚠️ CRITICAL: This represents when Glue ETL processed the data, NOT when the post was published. NEVER use this for date filtering logic. Use instagram_media.timestamp for filtering by post publication date. Always zero-padded (01-31). This column is ONLY for ETL metadata."
 
       glue_processed_at:
         name: "glue_processed_at"
