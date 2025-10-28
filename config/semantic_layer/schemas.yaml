@@ -5,7 +5,7 @@ tables:
   instagram_media:
     stream_type: "instagram"
     stream_name: "media"
-    description: "Instagram media posts including images, videos, carousel albums, and reels. Contains post metadata such as captions, timestamps, permalinks, and media types. Updated daily via Airbyte ingestion. This is the core table for analyzing Instagram content performance."
+    description: "Instagram media posts including images, videos, carousel albums, and reels. Contains post metadata such as captions, timestamps, permalinks, and media types. Updated daily via Airbyte ingestion. CRITICAL: This is a FULL REFRESH snapshot table containing ALL media posts from the beginning of time (not just recent posts). The 'timestamp' column represents when each post was originally published on Instagram. To analyze posts from a specific time period, filter by the 'timestamp' column (e.g., timestamp >= date_add('day', -30, current_date)). For performance metrics (reach, likes, engagement), you MUST join with instagram_media_insights."
     category: "social_media"
     use_cases:
       - "What are my top performing posts this month by engagement?"
@@ -262,13 +262,16 @@ tables:
           GROUP BY u.username, u.followers_count, u.media_count
 
     important_notes:
+      - "CRITICAL: This is a FULL REFRESH snapshot table containing ALL posts ever published (not just recent posts)"
+      - "CRITICAL: To get posts from last N days, you MUST filter by timestamp: timestamp >= date_add('day', -N, current_date)"
+      - "CRITICAL: For ANY metrics (reach, likes, engagement), you MUST join with instagram_media_insights"
+      - "CRITICAL: This table only has post metadata (caption, type, timestamp) - NO engagement metrics"
       - "ALWAYS filter by user_id for performance and data isolation - this is critical for query performance"
       - "Use partition keys (year, month, day) in WHERE clause for optimal performance"
       - "The 'id' field is Instagram's media ID - use for joins with instagram_media_insights"
       - "media_type values: IMAGE, VIDEO, CAROUSEL_ALBUM, REELS (REELS are tracked separately from VIDEO)"
       - "timestamp is in UTC timezone - convert to user's local timezone if needed for reporting"
       - "caption may be NULL or empty string - always check both conditions"
-      - "To analyze engagement, you MUST join with instagram_media_insights - this table only has post metadata"
 
     example_queries:
       - description: "Get top 10 posts by reach in last 30 days (requires join with media_insights)"
@@ -320,7 +323,7 @@ tables:
   instagram_media_insights:
     stream_type: "instagram"
     stream_name: "media_insights"
-    description: "Detailed performance metrics for individual Instagram posts including impressions, reach, engagement, saves, and shares. Updated daily via Airbyte. This table contains the actual engagement numbers - join with instagram_media to get post metadata."
+    description: "Detailed performance metrics for individual Instagram posts including impressions, reach, engagement, saves, and shares. Updated daily via Airbyte. CRITICAL: This table has NO timestamp column. To filter by post publication date, you MUST join with instagram_media and filter by media.timestamp. Never query this table alone for time-based analysis."
     category: "social_media"
     use_cases:
       - "What is the reach and engagement for my top performing posts?"
@@ -595,6 +598,10 @@ tables:
           LIMIT 10
 
     important_notes:
+      - "CRITICAL: This table has NO timestamp column - you MUST join with instagram_media to filter by post publish date"
+      - "CRITICAL: NEVER query this table alone for time-based analysis - always join with instagram_media first"
+      - "CRITICAL: To filter by time, use: JOIN instagram_media m ON ... WHERE m.timestamp >= date_add('day', -30, current_date)"
+      - "CRITICAL: DO NOT use partition columns (year, month, day) for user-facing time filters - these are ETL processing dates, not post publish dates"
       - "ALWAYS join with instagram_media to get post context (caption, media_type, timestamp)"
       - "ALWAYS filter by user_id for performance and data isolation"
       - "Engagement rate formula: (likes + comments + shares + saved) / reach * 100"

@@ -110,10 +110,25 @@ prompt: |
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
   - **Time Window Default**: If the user's question does NOT specify a time period, date range, or timeframe:
     - ✅ DEFAULT to last 30 days - BUT use the CORRECT date column for each table:
-      * instagram_media & instagram_media_insights: `AND timestamp >= date_add('day', -30, current_date)`
+      * instagram_media: `AND m.timestamp >= date_add('day', -30, current_date)`
+      * instagram_media_insights: MUST JOIN with instagram_media first, then filter by `m.timestamp >= date_add('day', -30, current_date)`
       * instagram_user_insights: `AND date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -30, current_date)`
+    - CRITICAL: instagram_media_insights has NO timestamp column - you MUST join with instagram_media to filter by post publish date
     - CRITICAL: instagram_user_insights uses 'date' column (NOT 'timestamp')
     - If user specifies a time period (e.g., "last week", "this month"), use that instead
+  - **Instagram Table Refresh Types** (CRITICAL):
+    - instagram_media: FULL REFRESH snapshot containing ALL posts ever published (not just recent posts)
+      * Filter by 'timestamp' column to get posts from specific time periods
+      * Example: `WHERE m.timestamp >= date_add('day', -30, current_date)` for last 30 days
+      * DO NOT assume this table only contains recent data
+    - instagram_media_insights: Has engagement metrics but NO timestamp column
+      * MUST join with instagram_media to filter by post publication time
+      * NEVER query alone for time-based analysis
+      * Example: `FROM instagram_media m JOIN instagram_media_insights mi ON m.id = mi.id AND m.user_id = mi.user_id WHERE m.timestamp >= ...`
+    - For ANY Instagram performance query (engagement, reach, likes):
+      * Step 1: Join instagram_media with instagram_media_insights on id AND user_id
+      * Step 2: Filter by m.timestamp for time window
+      * Step 3: Select metrics from instagram_media_insights (mi.reach, mi.likes, etc.)
   - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
     join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`
   - **DISTINCT for JOINs**: Use `SELECT DISTINCT` when JOINs might produce duplicate rows:
