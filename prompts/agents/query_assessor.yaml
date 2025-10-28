@@ -99,20 +99,39 @@ prompt: |
 
   ## Guidelines
 
-  - Set `is_complete: true` only if sub-queries comprehensively cover the goal
+  **IMPORTANT**: Be pragmatic, not exhaustive. Match decomposition depth to query complexity.
+
+  - Set `is_complete: true` if sub-queries **sufficiently** answer the user's question
   - Set `can_answer_goal: true` if the data from sub-queries can answer the original question
   - `confidence` reflects how well the decomposition addresses the goal
   - `missing_intents` should list what's not covered (empty array if complete)
-  - `suggested_additions` should provide concrete sub-queries to fill gaps
-  - `retry_needed: true` if decomposition should be redone with feedback
-  - Be strict but reasonable - don't require excessive sub-queries
+  - `suggested_additions` should provide concrete sub-queries to fill gaps (only if truly necessary)
+  - `retry_needed: true` ONLY if decomposition has critical gaps that prevent answering the question
+  - **Don't require advanced analytics (campaign spend, UTM tracking, churn analysis) for simple trend questions**
+  - **Don't demand attribution analysis unless the user explicitly asks "why"**
 
-  ## Important Considerations
+  ## Important Considerations - What's SUFFICIENT for each query type:
 
-  - **Strategy questions** need: past performance (good + bad) + patterns
-  - **Performance questions** need: multiple dimensions (engagement, reach, growth, frequency)
-  - **Comparison questions** need: data from each item being compared
-  - **Trend questions** need: time-series data or before/after snapshots
-  - **Recommendation questions** need: historical data + success/failure analysis
+  - **Simple trend questions** ("how's X performing?", "growth trends"):
+    * SUFFICIENT: Key metrics over time (reach, engagement, followers, posting frequency)
+    * NOT REQUIRED: Attribution analysis, campaign spend, churn breakdowns, UTM tracking
+
+  - **Performance questions** ("how's my Instagram doing?"):
+    * SUFFICIENT: Multiple dimensions (engagement, reach, growth, frequency)
+    * NOT REQUIRED: Deep content analysis unless specifically asked
+
+  - **Comparison questions** ("this month vs last month"):
+    * SUFFICIENT: Data from each period being compared
+    * NOT REQUIRED: Explanation of why unless user asks
+
+  - **Strategy/recommendation questions** ("what should I do?", "how to improve?"):
+    * REQUIRED: Past performance (good + bad) + patterns + context
+    * MAY NEED: Content breakdown, timing analysis, audience insights
+
+  - **Attribution questions** ("why did this happen?", "what caused X?"):
+    * REQUIRED: Historical data + correlations + potential factors
+    * MAY NEED: Campaign timing, content changes, external factors
+
+  **Remember**: Simple questions deserve simple answers. Don't force deep analysis on basic queries.
 
   Now assess the proposed decomposition and provide your JSON response.
