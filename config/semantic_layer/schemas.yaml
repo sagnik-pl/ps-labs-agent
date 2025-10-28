@@ -663,8 +663,8 @@ tables:
       date:
         name: "date"
         type: "string"
-        description: "Date of the insight snapshot (YYYY-MM-DD format)"
-        example_values: ["2024-01-15", "2024-12-25", "2024-06-30"]
+        description: "Date of the insight snapshot (stored as timestamp string: YYYY-MM-DD HH:MM:SS format)"
+        example_values: ["2024-01-15 07:00:00", "2024-12-25 08:00:00", "2024-06-30 07:00:00"]
         primary_key: true
         required: true
         filter_required: false
@@ -672,10 +672,10 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "date >= '2024-01-01'"
-          - "date BETWEEN '2024-01-01' AND '2024-12-31'"
-          - "CAST(date AS DATE) >= date_add('day', -30, current_date)"
-        notes: "Daily snapshot - one row per day. Use for time series analysis. IMPORTANT: date is stored as STRING, so use CAST(date AS DATE) when comparing with date functions."
+          - "SUBSTR(date, 1, 10) >= '2024-01-01'"
+          - "SUBSTR(date, 1, 10) BETWEEN '2024-01-01' AND '2024-12-31'"
+          - "date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -30, current_date)"
+        notes: "Daily snapshot - one row per day. Use for time series analysis. CRITICAL: date is stored as STRING with timestamp (YYYY-MM-DD HH:MM:SS), so use SUBSTR(date, 1, 10) to extract YYYY-MM-DD portion before date comparisons, or use date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') for date functions."
 
       reach:
         name: "reach"
