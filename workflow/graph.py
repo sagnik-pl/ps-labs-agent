@@ -237,10 +237,17 @@ def create_agent_workflow(checkpointer=None, websocket_manager=None, session_id=
     workflow.add_edge("interpreter", END)
 
     # Compile the graph
-    if checkpointer is None:
+    from config.settings import settings
+
+    # Only use checkpointing if explicitly enabled (adds ~1-2min overhead)
+    if checkpointer is None and settings.enable_checkpointing:
         checkpointer = MemorySaver()
 
-    app = workflow.compile(checkpointer=checkpointer)
+    # Compile with or without checkpointing based on configuration
+    if checkpointer:
+        app = workflow.compile(checkpointer=checkpointer)
+    else:
+        app = workflow.compile()  # No checkpointing for better performance
 
     return app
 

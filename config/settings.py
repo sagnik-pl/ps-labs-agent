@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:3000"
 
+    # Performance Configuration
+    enable_checkpointing: bool = Field(default=False, description="Enable LangGraph state checkpointing (adds ~1-2min overhead)")
+
     # Encryption Configuration (End-to-End Encryption for Chat Messages)
     encryption_enabled: bool = Field(default=False, description="Enable message encryption")
     kms_key_id: Optional[str] = Field(default=None, description="AWS KMS key ID for envelope encryption")

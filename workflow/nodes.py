@@ -14,6 +14,9 @@ import json
 class WorkflowNodes:
     """Collection of node functions for the agent workflow graph."""
 
+    # Class-level cache for knowledge bases (shared across all instances)
+    _knowledge_cache = {}
+
     def __init__(self, websocket_manager=None, session_id=None):
         """
         Initialize workflow nodes with lazy-loaded LLM instances.
@@ -58,9 +61,9 @@ class WorkflowNodes:
         """Lazy-load default LLM for most nodes (planning, assessment, validation, formatting)."""
         if self._llm is None:
             self._llm = ChatOpenAI(
-                model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: Cost-efficient for structured tasks
+                model="gpt-4o-mini",  # GPT-4o-mini: Faster and more efficient than GPT-5-mini for JSON generation
                 openai_api_key=settings.openai_api_key,
-                temperature=1,  # GPT-5 models (including Mini) only support temperature=1
+                temperature=0.7,  # GPT-4o-mini supports variable temperature
             )
         return self._llm
 
@@ -391,6 +394,13 @@ class WorkflowNodes:
         Returns:
             Updated state with routing decision
         """
+        import logging
+        import time
+        logger = logging.getLogger(__name__)
+
+        start_time = time.time()
+        logger.info(f"🔀 router_node starting at {time.strftime('%H:%M:%S')}")
+
         plan = state.get("plan", {})
         query = state["query"]
 
@@ -410,6 +420,9 @@ class WorkflowNodes:
                 "workflow_path": "multi_intent_sql_pipeline",
             }
 
+            elapsed = time.time() - start_time
+            logger.info(f"✅ router_node completed in {elapsed:.2f}s - routing to multi_intent_executor")
+
             return {
                 "routing_decision": routing_decision,
                 "next_step": "multi_intent_executor",
@@ -425,6 +438,9 @@ class WorkflowNodes:
                 "next_step": "sql_generator",
                 "workflow_path": "sql_pipeline",
             }
+
+            elapsed = time.time() - start_time
+            logger.info(f"✅ router_node completed in {elapsed:.2f}s - routing to sql_generator")
 
             return {
                 "routing_decision": routing_decision,
@@ -457,6 +473,7 @@ class WorkflowNodes:
         import time
 
         logger = logging.getLogger(__name__)
+        logger.info(f"🎯 multi_intent_executor_node starting at {time.strftime('%H:%M:%S')}")
 
         # Extract decomposition
         decomposition = state.get("query_decomposition", {})

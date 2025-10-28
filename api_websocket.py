@@ -306,12 +306,16 @@ async def process_query_with_progress(
             session_id=session_id
         )
 
-        # Configure checkpointing
-        config = {
-            "configurable": {
-                "thread_id": conversation_id
+        # Configure checkpointing (only if enabled)
+        from config.settings import settings
+        if settings.enable_checkpointing:
+            config = {
+                "configurable": {
+                    "thread_id": conversation_id
+                }
             }
-        }
+        else:
+            config = None  # No checkpointing for better performance
 
         # Stream execution with real-time progress updates
         final_result = None
@@ -319,7 +323,12 @@ async def process_query_with_progress(
         try:
             logger.info(f"🚀 Starting workflow execution...")
             # Stream workflow execution and send progress for each node
-            async for event in workflow.astream(initial_state, config=config):
+            if config:
+                stream = workflow.astream(initial_state, config=config)
+            else:
+                stream = workflow.astream(initial_state)
+
+            async for event in stream:
                 # Validate event is a dict
                 if not isinstance(event, dict):
                     logger.warning(f"Received non-dict event: {type(event)} = {event}")
