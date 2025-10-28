@@ -37,9 +37,80 @@ prompt: |
 
   **Previous Validation Feedback** (if retry): {previous_feedback}
 
+  ## Schema-Based Validation Process
+
+  Use the following 4-step inspection flow to systematically validate the query:
+
+  ### Step 1: Verify Data Stream Selection
+
+  Check if the query uses tables from the correct data_stream_type:
+  - For Instagram questions → Should use `instagram_*` tables (data_stream_type: instagram)
+  - For Facebook Ads questions → Should use `facebook_*` tables (data_stream_type: facebook)
+  - For website/e-commerce questions → Should use `google_analytics_*` tables (data_stream_type: google_analytics)
+
+  **Red flags**:
+  - ❌ Instagram question using facebook tables
+  - ❌ E-commerce question using Instagram tables
+  - ❌ Mixing unrelated data streams without clear reason
+
+  ### Step 2: Verify Table Selection Appropriateness
+
+  Examine if the selected tables are appropriate for the user's question:
+  - Review each table's **use_cases** in the schema
+  - Check if the table's **description** matches the query intent
+  - Verify the question can be answered with the selected tables
+
+  **Examples of incorrect table selection**:
+  - ❌ Using `instagram_media` for engagement metrics (should use `instagram_media_insights`)
+  - ❌ Using `instagram_user_insights` for demographics (should use `instagram_user_lifetime_insights`)
+  - ❌ Using post-level table for account-level metrics
+
+  **Validation**:
+  - Does each table's use_cases align with what the user asked?
+  - Is there a better table that matches the intent more closely?
+  - Are all necessary tables included?
+
+  ### Step 3: Verify Column Selection & Correctness
+
+  Carefully check ALL columns against the schema:
+
+  **Column Existence**:
+  - ✅ Every column in SELECT, WHERE, JOIN, ORDER BY must exist in the schema
+  - ✅ Column names must be spelled EXACTLY as shown in schema (case-sensitive)
+  - ❌ Common mistakes: 'saves' should be 'saved', 'impressions' doesn't exist (use 'reach')
+
+  **Column Appropriateness**:
+  - Check each column's **description** - does it provide the needed data?
+  - For aggregations, verify columns are marked as **aggregatable**
+  - For metrics, check **used_in_metrics** field
+  - Review column **notes** for critical warnings
+
+  **Required Columns**:
+  - Engagement rate needs: likes, comments, saved, shares, reach
+  - Time-series queries need: timestamp or date column
+  - ALL queries need: user_id (for filtering)
+
+  ### Step 4: Verify Query Logic & Structure
+
+  **Join Validation**:
+  - Instagram joins MUST join on BOTH id AND user_id
+  - Example: `ON m.id = i.id AND m.user_id = i.user_id` ✅
+  - Wrong: `ON m.id = i.id` ❌
+  - Check common_joins in schema for recommended join patterns
+
+  **Filter Validation**:
+  - user_id filter is MANDATORY (security/isolation)
+  - Time filters should use partition columns when possible
+  - Check for columns marked as filter_required in schema
+
+  **Aggregation Validation**:
+  - Aggregated columns should have aggregatable: true in schema
+  - GROUP BY should include all non-aggregated SELECT columns
+  - HAVING clauses use aggregated expressions
+
   ## Validation Task
 
-  Carefully validate the SQL query against all criteria in the validation knowledge.
+  Carefully validate the SQL query against all criteria above and below.
 
   ### Critical Checks (Must Pass)
 

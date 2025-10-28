@@ -1,9 +1,9 @@
 """
 Semantic Layer for E-commerce Analytics
 
-Provides structured access to metric definitions, schema information,
-and query patterns. Acts as a knowledge layer between user questions
-and SQL generation, ensuring correct formulas, column names, and interpretations.
+Provides structured access to metric definitions and schema information.
+Acts as a knowledge layer between user questions and SQL generation,
+ensuring correct formulas, column names, and interpretations.
 
 Usage:
     from utils.semantic_layer import semantic_layer
@@ -15,8 +15,8 @@ Usage:
     # Get schema information
     column_info = semantic_layer.get_column("instagram_media_insights", "saved")
 
-    # Find matching query pattern
-    pattern = semantic_layer.match_query_pattern("what content performed best?")
+    # Get tables by data stream
+    instagram_tables = semantic_layer.list_tables_by_data_stream("instagram")
 """
 
 import yaml
@@ -31,12 +31,12 @@ logger = logging.getLogger(__name__)
 
 class SemanticLayer:
     """
-    Semantic layer providing structured access to metrics, schemas, and query patterns.
+    Semantic layer providing structured access to metrics and schemas.
 
     Loads configuration from YAML files and provides methods to:
     - Get metric definitions and SQL expressions
     - Validate column names against schema
-    - Match user queries to optimized query patterns
+    - Format table information for intelligent LLM-driven selection
     - Provide interpretation guidelines for metrics
     """
 
@@ -50,13 +50,12 @@ class SemanticLayer:
         self.config_dir = Path(config_dir)
         self._metrics: Optional[Dict] = None
         self._schemas: Optional[Dict] = None
-        self._query_patterns: Optional[Dict] = None
 
         # Load configurations
         self._load_configs()
 
         logger.info(f"✅ Semantic layer initialized with {len(self.metrics)} metrics, "
-                   f"{len(self.schemas)} tables, {len(self.query_patterns)} query patterns")
+                   f"{len(self.schemas)} tables")
 
     def _load_configs(self):
         """Load all configuration files."""
@@ -71,17 +70,11 @@ class SemanticLayer:
             with open(schemas_path, 'r') as f:
                 self._schemas = yaml.safe_load(f).get('tables', {})
 
-            # Load query patterns
-            patterns_path = self.config_dir / "query_patterns.yaml"
-            with open(patterns_path, 'r') as f:
-                self._query_patterns = yaml.safe_load(f).get('patterns', {})
-
         except Exception as e:
             logger.error(f"Error loading semantic layer configs: {e}")
             # Initialize empty dicts to prevent crashes
             self._metrics = self._metrics or {}
             self._schemas = self._schemas or {}
-            self._query_patterns = self._query_patterns or {}
 
     @property
     def metrics(self) -> Dict:
@@ -92,11 +85,6 @@ class SemanticLayer:
     def schemas(self) -> Dict:
         """Get all schema definitions."""
         return self._schemas
-
-    @property
-    def query_patterns(self) -> Dict:
-        """Get all query pattern definitions."""
-        return self._query_patterns
 
     # ========== Metric Methods ==========
 
@@ -365,110 +353,99 @@ class SemanticLayer:
                 return join
         return None
 
-    # ========== Query Pattern Methods ==========
-
-    def get_query_pattern(self, pattern_name: str) -> Optional[Dict]:
-        """Get query pattern definition by name."""
-        return self.query_patterns.get(pattern_name)
-
-    def match_query_pattern(self, user_query: str) -> Optional[str]:
-        """
-        Match user query to a query pattern using keywords and regex.
-
-        Args:
-            user_query: Natural language query from user
-
-        Returns:
-            Name of matching pattern or None
-        """
-        query_lower = user_query.lower()
-
-        # Try keyword matching first
-        patterns_config = self._load_patterns_config()
-        keywords = patterns_config.get('pattern_matching', {}).get('keywords', {})
-
-        for keyword, pattern_names in keywords.items():
-            if keyword in query_lower:
-                # Return first matching pattern
-                return pattern_names[0] if pattern_names else None
-
-        # Try regex pattern matching
-        question_patterns = patterns_config.get('pattern_matching', {}).get('question_patterns', [])
-        for pattern_def in question_patterns:
-            regex = pattern_def.get('pattern')
-            if regex and re.search(regex, query_lower):
-                suggested = pattern_def.get('suggested_patterns', [])
-                return suggested[0] if suggested else None
-
-        return None
-
-    def get_pattern_template(self, pattern_name: str, **params) -> Optional[str]:
-        """
-        Get query template with parameters filled in.
-
-        Args:
-            pattern_name: Name of the pattern
-            **params: Parameters to fill in the template
-
-        Returns:
-            SQL query string with parameters filled in
-        """
-        pattern = self.get_query_pattern(pattern_name)
-        if not pattern:
-            return None
-
-        template = pattern.get('template', '')
-
-        # Get default parameters
-        pattern_params = pattern.get('parameters', {})
-        final_params = {}
-
-        for param_name, param_def in pattern_params.items():
-            if param_name in params:
-                final_params[param_name] = params[param_name]
-            elif 'default' in param_def:
-                final_params[param_name] = param_def['default']
-
-        # Fill in template
-        try:
-            return template.format(**final_params)
-        except KeyError as e:
-            logger.warning(f"Missing required parameter for pattern '{pattern_name}': {e}")
-            return None
-
-    def list_patterns_for_use_case(self, use_case_keyword: str) -> List[str]:
-        """
-        Find patterns that match a use case.
-
-        Args:
-            use_case_keyword: Keyword to search in use cases
-
-        Returns:
-            List of matching pattern names
-        """
-        keyword_lower = use_case_keyword.lower()
-        matching = []
-
-        for pattern_name, pattern_def in self.query_patterns.items():
-            use_cases = pattern_def.get('use_cases', [])
-            for use_case in use_cases:
-                if keyword_lower in use_case.lower():
-                    matching.append(pattern_name)
-                    break
-
-        return matching
-
     # ========== Helper Methods ==========
 
-    def _load_patterns_config(self) -> Dict:
-        """Load full query patterns config including pattern matching rules."""
-        try:
-            patterns_path = self.config_dir / "query_patterns.yaml"
-            with open(patterns_path, 'r') as f:
-                return yaml.safe_load(f)
-        except Exception as e:
-            logger.error(f"Error loading query patterns config: {e}")
-            return {}
+    def format_tables_for_selection(self, tables_info: List[Dict]) -> str:
+        """
+        Format table information for LLM-based intelligent table selection.
+
+        Groups tables by data stream type and presents them with descriptions,
+        use cases, and column summaries to help the LLM choose appropriate tables.
+
+        Args:
+            tables_info: List of dicts containing table metadata:
+                - name: str (table name)
+                - description: str (table description)
+                - use_cases: List[str] (when to use this table)
+                - data_stream_type: str (instagram, facebook, google_analytics)
+                - category: str (social_media, advertising, analytics)
+                - columns_summary: List[str] (sample of column names)
+
+        Returns:
+            Formatted string with tables grouped by data stream, ready for prompt
+
+        Example Output:
+            ```
+            ## Instagram Tables (5 tables)
+
+            ### instagram_media
+            **Description**: Instagram posts and reels metadata...
+            **Use Cases**:
+            - Analyzing post content and captions
+            - Tracking posting frequency and content types
+            **Sample Columns**: id, user_id, media_type, caption, timestamp, permalink...
+
+            ### instagram_media_insights
+            **Description**: Instagram post engagement metrics...
+            **Use Cases**:
+            - Measuring post engagement (likes, comments, saves, shares)
+            - Calculating engagement rates and reach metrics
+            **Sample Columns**: id, user_id, likes, comments, saved, shares, reach...
+            ```
+        """
+        if not tables_info:
+            return "No tables available."
+
+        # Group tables by data stream type
+        grouped = {}
+        for table in tables_info:
+            stream_type = table.get('data_stream_type', 'unknown')
+            if stream_type not in grouped:
+                grouped[stream_type] = []
+            grouped[stream_type].append(table)
+
+        # Format output
+        lines = []
+
+        # Data stream display names
+        stream_names = {
+            'instagram': 'Instagram',
+            'facebook': 'Facebook Ads',
+            'google_analytics': 'Google Analytics (E-commerce)'
+        }
+
+        for stream_type in sorted(grouped.keys()):
+            tables = grouped[stream_type]
+            stream_name = stream_names.get(stream_type, stream_type.title())
+
+            lines.append(f"## {stream_name} Tables ({len(tables)} tables)")
+            lines.append("")
+
+            for table in tables:
+                lines.append(f"### {table['name']}")
+
+                # Description
+                description = table.get('description', 'No description')
+                lines.append(f"**Description**: {description}")
+
+                # Use cases
+                use_cases = table.get('use_cases', [])
+                if use_cases:
+                    lines.append("**Use Cases**:")
+                    for use_case in use_cases[:6]:  # Show first 6 use cases
+                        lines.append(f"- {use_case}")
+
+                # Sample columns
+                columns = table.get('columns_summary', [])
+                if columns:
+                    columns_str = ', '.join(columns)
+                    lines.append(f"**Sample Columns**: {columns_str}")
+
+                lines.append("")  # Blank line between tables
+
+            lines.append("")  # Blank line between data streams
+
+        return "\n".join(lines)
 
     def get_schema_for_sql_gen(self, table_name: str) -> str:
         """
@@ -1224,11 +1201,6 @@ def validate_column(table_name: str, column_name: str) -> bool:
 def get_schema_info(table_name: str) -> str:
     """Get formatted schema information for prompts."""
     return semantic_layer.get_schema_for_sql_gen(table_name)
-
-
-def match_query_pattern(user_query: str) -> Optional[str]:
-    """Match user query to an optimized query pattern."""
-    return semantic_layer.match_query_pattern(user_query)
 
 
 def check_data_availability(user_query: str) -> Dict[str, Any]:

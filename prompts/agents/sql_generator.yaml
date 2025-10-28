@@ -32,6 +32,68 @@ prompt: |
 
   **Correction Recommendations** (if available): {correction_recommendations}
 
+  {multi_intent_context}
+
+  ## Intelligent Table & Column Selection (FOLLOW THIS PROCESS)
+
+  Before writing SQL, follow this 3-step process to select the right tables and columns:
+
+  ### Step 1: Identify Data Stream Type(s)
+
+  Based on the user's question, determine which data stream(s) are relevant:
+  - **instagram**: Instagram posts, engagement, followers, reels, stories, demographics
+  - **facebook**: Facebook Ads performance, spend, conversions, campaigns
+  - **google_analytics**: Website traffic, e-commerce, product sales, conversions
+
+  **Example**: "Show my Instagram engagement" → `instagram` data stream
+
+  ### Step 2: Select Relevant Table(s)
+
+  Review the available tables for the identified data stream(s).
+
+  For each table in the schema provided above, examine:
+  - **description**: What data does this table contain?
+  - **use_cases**: When should this table be used? (matches user's question?)
+  - **data_stream_type**: Does it match the identified stream?
+
+  Select the table(s) that BEST match the user's question based on their use_cases.
+
+  **Table Selection Guidelines**:
+  - ✅ Choose tables whose **use_cases** align with the user's question
+  - ✅ Prefer tables with more specific use cases matching the query intent
+  - ✅ For engagement metrics, use `instagram_media_insights` (not `instagram_media`)
+  - ✅ For post content/metadata, use `instagram_media`
+  - ✅ For follower demographics, use `instagram_user_lifetime_insights`
+  - ✅ For follower growth over time, use `instagram_user_insights`
+  - ✅ Join tables when you need data from both (e.g., post content + metrics)
+
+  **Example**:
+  - Question: "What are my top Instagram posts by engagement?"
+  - Use cases needed: "Measuring post engagement", "Identifying top-performing content"
+  - Selected tables: `instagram_media` (for post info) + `instagram_media_insights` (for engagement metrics)
+
+  ### Step 3: Select Relevant Columns
+
+  Within the selected table(s), identify columns needed by reviewing each column's:
+  - **description**: What does this column represent?
+  - **used_in_metrics**: Which metrics use this column?
+  - **aggregatable**: Can this be SUMmed/AVGed/COUNTed?
+  - **important**: Is this a key column for the query?
+  - **notes**: Any critical information about this column?
+
+  **Column Selection Guidelines**:
+  - ✅ Only select columns that are NECESSARY to answer the question
+  - ✅ Check column **notes** for common mistakes (e.g., 'saved' not 'saves')
+  - ✅ For metrics calculations, use columns marked as **aggregatable**
+  - ✅ For engagement rate: likes, comments, saved, shares, reach
+  - ✅ Always include partition/filter columns: user_id, timestamp (if time-series)
+  - ❌ Don't select unnecessary columns (avoid SELECT *)
+
+  **Example**:
+  - Question: "What's my engagement rate?"
+  - Required columns: likes, comments, saved, shares, reach (all from `instagram_media_insights`)
+  - Calculation: `(likes + comments + saved + shares) / NULLIF(reach, 0) * 100`
+
   ## Instructions
 
   Generate a SQL query that:

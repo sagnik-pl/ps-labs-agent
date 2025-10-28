@@ -1221,7 +1221,6 @@ Apply criterion #9 (Multi-Intent Synthesis Quality) when validating.
         """
         from tools.athena_tools import list_tables_tool, table_schema_tool
         from utils.semantic_layer import semantic_layer
-        from utils.sql_templates import suggest_template, get_template_with_validation, get_template_metadata
         import logging
 
         logger = logging.getLogger(__name__)
@@ -1237,94 +1236,80 @@ Apply criterion #9 (Multi-Intent Synthesis Quality) when validating.
         if is_correction_mode:
             logger.info("🔧 SQL Generation: CORRECTION MODE (using fix recommendations)")
         else:
-            logger.info("🆕 SQL Generation: FRESH MODE (initial generation)")
+            logger.info("🆕 SQL Generation: FRESH MODE (intelligent table selection)")
 
-        # ========== STEP 1: Try Template-Based Generation ==========
-        # Check if query matches a pre-optimized template
-        matched_template = suggest_template(query)
+        # ========== STEP 1: Intelligent Table Selection ==========
+        # Identify relevant data streams based on query keywords
+        query_lower = query.lower()
+        relevant_streams = []
 
-        if matched_template:
-            logger.info(f"Found matching template: {matched_template}")
+        # Detect data streams from query
+        if any(kw in query_lower for kw in ['instagram', 'ig', 'post', 'reel', 'follower', 'insta']):
+            relevant_streams.append('instagram')
+        if any(kw in query_lower for kw in ['facebook', 'fb', 'ad', 'ads', 'campaign']):
+            relevant_streams.append('facebook')
+        if any(kw in query_lower for kw in ['website', 'traffic', 'product', 'purchase', 'ecommerce', 'google analytics', 'ga']):
+            relevant_streams.append('google_analytics')
 
-            # Get template metadata to extract default parameters
-            template_meta = get_template_metadata(matched_template)
+        # Default to instagram if no stream detected (most common)
+        if not relevant_streams:
+            relevant_streams = ['instagram']
+            logger.info(f"No specific data stream detected, defaulting to instagram")
 
-            if template_meta:
-                # Prepare parameters (user_id is always required)
-                template_params = {"user_id": user_id}
+        logger.info(f"Detected data streams: {relevant_streams}")
 
-                # Try to extract time period from query if needed
-                if 'days' in template_meta['parameters']:
-                    # Simple extraction: look for numbers followed by "day(s)" or "week(s)"
-                    import re
-                    days_match = re.search(r'(\d+)\s*(?:day|days)', query.lower())
-                    weeks_match = re.search(r'(\d+)\s*(?:week|weeks)', query.lower())
-
-                    if days_match:
-                        template_params['days'] = int(days_match.group(1))
-                    elif weeks_match:
-                        template_params['days'] = int(weeks_match.group(1)) * 7
-                    # else: will use default from template
-
-                # Try to extract limit from query if needed
-                if 'limit' in template_meta['parameters']:
-                    limit_match = re.search(r'(?:top|first|last)\s*(\d+)', query.lower())
-                    if limit_match:
-                        template_params['limit'] = int(limit_match.group(1))
-
-                # Generate SQL from template
-                template_result = get_template_with_validation(matched_template, **template_params)
-
-                if template_result['success']:
-                    logger.info(f"✅ Using optimized template: {matched_template}")
-
-                    return {
-                        "generated_sql": template_result['sql'],
-                        "table_schemas": f"Using optimized template: {template_meta['display_name']}",
-                        "used_template": matched_template,
-                        "template_params": template_params,
-                        "messages": [AIMessage(content=f"Generated SQL using optimized template: {template_meta['display_name']}")],
+        # Get all tables for relevant streams with their metadata
+        all_tables_info = []
+        for stream in relevant_streams:
+            tables = semantic_layer.list_tables_by_data_stream(stream)
+            for table_name in tables:
+                table_schema = semantic_layer.get_table_schema(table_name)
+                if table_schema:
+                    table_info = {
+                        'name': table_name,
+                        'description': table_schema.get('description', ''),
+                        'use_cases': table_schema.get('use_cases', []),
+                        'data_stream_type': table_schema.get('data_stream_type', ''),
+                        'category': table_schema.get('category', ''),
+                        'columns_summary': list(table_schema.get('columns', {}).keys())[:15]  # First 15 columns
                     }
-                else:
-                    logger.warning(f"Template validation failed: {template_result['error']}")
-                    # Fall through to LLM-based generation
+                    all_tables_info.append(table_info)
 
-        # ========== STEP 2: LLM-Based SQL Generation ==========
-        # No matching template or template failed - generate from scratch
+        # Format tables for LLM selection (grouped by data stream)
+        table_schemas_formatted = semantic_layer.format_tables_for_selection(all_tables_info)
 
-        # Get available tables
-        tables_result = list_tables_tool.invoke({"user_id": user_id})
+        logger.info(f"Prepared {len(all_tables_info)} tables for LLM selection")
 
-        # Get schemas for relevant tables using semantic layer
-        # Semantic layer provides enhanced schema with column types, descriptions, and notes
-        table_schemas_list = []
-        if "instagram" in query.lower():
-            for table_name in ["instagram_media", "instagram_media_insights"]:
-                # Get enhanced schema from semantic layer
-                semantic_schema = semantic_layer.get_schema_for_sql_gen(table_name)
+        # ========== STEP 2: Multi-Intent Context Handling ==========
+        # Check if this is part of a multi-intent query decomposition
+        multi_intent_context = ""
+        is_sub_query = state.get("is_sub_query", False)
 
-                # Also get Athena schema for column list
-                athena_schema = table_schema_tool.invoke({"table_name": table_name})
+        if is_sub_query:
+            sub_query_info = state.get("sub_query_info", {})
+            intent = sub_query_info.get('intent', 'N/A')
+            original_goal = sub_query_info.get('original_goal', query)
 
-                # Combine both for comprehensive information
-                combined_schema = f"{semantic_schema}\n\nAthena Schema:\n{athena_schema}"
-                table_schemas_list.append(combined_schema)
+            multi_intent_context = f"""
+## Multi-Intent Query Decomposition
 
-        table_schemas = "\n\n".join(table_schemas_list) if table_schemas_list else tables_result
+This query is part of a larger multi-intent question that was decomposed into focused sub-queries.
 
-        # Add pattern info hint if we found a template but couldn't use it
-        pattern_info = ""
-        if matched_template:
-            pattern_def = semantic_layer.get_query_pattern(matched_template)
-            if pattern_def:
-                pattern_info = f"\n\n**Similar Query Pattern**: {pattern_def.get('name')}\n"
-                pattern_info += f"Description: {pattern_def.get('description')}\n"
-                pattern_info += f"You can reference this pattern's structure for your query.\n"
-                # Include the template as an example
-                if 'template' in pattern_def:
-                    pattern_info += f"\n**Example Template Structure**:\n{pattern_def['template'][:500]}...\n"
+**Your Specific Intent**: {intent}
 
-        # Format correction recommendations if present
+**Your Question**: {query}
+
+**Original User Goal**: {original_goal}
+
+⚠️ **IMPORTANT**:
+- Focus ONLY on answering YOUR specific question above
+- Don't try to answer other parts of the original goal
+- Keep your query simple and focused on this single intent
+- The decomposition system will combine all sub-query results later
+"""
+            logger.info(f"Multi-intent context added: intent={intent}")
+
+        # ========== STEP 3: Correction Recommendations ==========
         correction_mode_info = ""
         if is_correction_mode:
             recommendations = correction_recommendations
@@ -1357,9 +1342,10 @@ Apply criterion #9 (Multi-Intent Synthesis Quality) when validating.
             variables={
                 "user_query": query,
                 "user_id": user_id,
-                "table_schemas": table_schemas + pattern_info,
+                "table_schemas": table_schemas_formatted,
                 "validation_feedback": validation_feedback or "No previous feedback",
-                "correction_recommendations": correction_mode_info or "No correction recommendations"
+                "correction_recommendations": correction_mode_info or "No correction recommendations",
+                "multi_intent_context": multi_intent_context
             }
         )
 
@@ -1376,9 +1362,9 @@ Apply criterion #9 (Multi-Intent Synthesis Quality) when validating.
 
         return {
             "generated_sql": generated_sql,
-            "table_schemas": table_schemas,
+            "table_schemas": table_schemas_formatted,
             "sql_correction_recommendations": None,  # Clear recommendations after use
-            "messages": [AIMessage(content=f"Generated SQL query")],
+            "messages": [AIMessage(content=f"Generated SQL query using intelligent table selection")],
         }
 
     def sql_validator_node(self, state: AgentState) -> Dict[str, Any]:

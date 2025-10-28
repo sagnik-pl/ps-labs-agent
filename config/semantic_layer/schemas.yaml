@@ -5,6 +5,13 @@ tables:
     description: Instagram posts and reels metadata including captions, timestamps, and content type
     category: social_media
     data_stream_type: instagram
+    use_cases:
+      - "Analyzing post content and captions"
+      - "Tracking posting frequency and content types"
+      - "Finding posts by media type (REELS, IMAGE, VIDEO, CAROUSEL)"
+      - "Examining posting patterns over time"
+      - "Retrieving post metadata (timestamps, permalinks, usernames)"
+      - "Comparing content across different post types"
     columns:
       id:
         name: id
@@ -90,6 +97,14 @@ tables:
     description: Performance metrics for Instagram posts including reach, engagement, and interactions
     category: social_media
     data_stream_type: instagram
+    use_cases:
+      - "Measuring post engagement (likes, comments, saves, shares)"
+      - "Calculating engagement rates and reach metrics"
+      - "Comparing post performance across different content types"
+      - "Identifying top-performing content by engagement"
+      - "Analyzing audience interaction patterns"
+      - "Tracking reach, impressions, and frequency metrics"
+      - "Measuring content virality and sharing behavior"
     columns:
       id:
         name: id
@@ -238,6 +253,12 @@ tables:
       refresh data - shows latest account state for each sync.
     category: social_media
     data_stream_type: instagram
+    use_cases:
+      - "Retrieving current follower count and account metrics"
+      - "Getting account profile information (bio, website, username)"
+      - "Tracking total media count on account"
+      - "Analyzing follows vs followers ratio"
+      - "Checking account verification status and profile details"
     columns:
       id:
         name: id
@@ -374,6 +395,13 @@ tables:
       data - each record represents a specific date's metrics.
     category: social_media
     data_stream_type: instagram
+    use_cases:
+      - "Tracking follower growth over time (daily snapshots)"
+      - "Analyzing account-level reach trends"
+      - "Measuring impressions and profile views over time"
+      - "Understanding when followers are online"
+      - "Monitoring follower count changes and growth rate"
+      - "Calculating weekly/monthly reach metrics"
     columns:
       date:
         name: date
@@ -501,6 +529,13 @@ tables:
       metric with value as JSON string containing demographic distribution.
     category: social_media
     data_stream_type: instagram
+    use_cases:
+      - "Analyzing follower demographics by age and gender"
+      - "Understanding follower geographic distribution (country, city)"
+      - "Segmenting audience by demographic characteristics"
+      - "Identifying target audience composition"
+      - "Comparing demographic breakdowns over time"
+      - "Building audience personas from demographic data"
     columns:
       metric:
         name: metric
@@ -652,6 +687,15 @@ tables:
       clicks, conversions, and detailed action data.
     category: advertising
     data_stream_type: facebook
+    use_cases:
+      - "Measuring Facebook Ads performance and ROI"
+      - "Analyzing ad spend and cost per click/conversion"
+      - "Tracking ad reach, impressions, and frequency"
+      - "Comparing campaign performance across objectives"
+      - "Calculating ROAS (Return on Ad Spend)"
+      - "Analyzing demographic performance (age, gender breakdowns)"
+      - "Understanding geographic ad performance by DMA region"
+      - "Measuring conversion metrics and action counts"
     columns:
       ad_id:
         name: ad_id
@@ -1025,6 +1069,15 @@ tables:
       purchases, and revenue by item name.
     category: analytics
     data_stream_type: google_analytics
+    use_cases:
+      - "Analyzing product sales performance and revenue"
+      - "Tracking product views and add-to-cart rates"
+      - "Calculating product conversion rates"
+      - "Identifying top-selling products"
+      - "Measuring cart abandonment by product"
+      - "Analyzing average order value per product"
+      - "Comparing product performance over time"
+      - "Understanding e-commerce funnel metrics by product"
     columns:
       date:
         name: date
