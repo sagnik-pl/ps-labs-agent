@@ -14,6 +14,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Cache bust to force rebuild of application code layers
+ARG CACHE_BUST=1730100000
+
 # Copy application code
 COPY . .
 
