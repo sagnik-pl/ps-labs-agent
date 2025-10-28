@@ -69,12 +69,12 @@ class WorkflowNodes:
 
     @property
     def llm_sql(self):
-        """Lazy-load premium model for SQL generation (complex reasoning, table selection, joins)."""
+        """Lazy-load fast model for SQL generation (well-structured prompts with rich schemas)."""
         if self._llm_sql is None:
             self._llm_sql = ChatOpenAI(
-                model="gpt-5-2025-08-07",  # GPT-5: Better reasoning for SQL generation
+                model="gpt-4o-mini",  # GPT-4o-mini: 2-3x faster than GPT-5, sufficient with detailed prompts
                 openai_api_key=settings.openai_api_key,
-                temperature=1,  # GPT-5 models only support temperature=1
+                temperature=0.7,  # Standard temperature for structured output
             )
         return self._llm_sql
 
