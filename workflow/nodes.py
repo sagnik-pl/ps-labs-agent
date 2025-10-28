@@ -60,7 +60,7 @@ class WorkflowNodes:
             self._llm = ChatOpenAI(
                 model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: Cost-efficient for structured tasks
                 openai_api_key=settings.openai_api_key,
-                temperature=1,  # GPT-5 models only support temperature=1
+                temperature=0,  # GPT-5 Mini: Use temperature=0 for deterministic outputs
             )
         return self._llm
 
