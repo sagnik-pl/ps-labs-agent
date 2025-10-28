@@ -12,6 +12,8 @@ import json
 import uuid
 from datetime import datetime, timezone
 import logging
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
+from uvicorn.protocols.utils import ClientDisconnected
 
 from workflow import create_agent_workflow
 from workflow.progress import ProgressEvent, get_progress_message
@@ -84,10 +86,26 @@ class ConnectionManager:
             del self.debug_mode[session_id]
 
     async def send_message(self, session_id: str, message: dict):
-        """Send message to specific session."""
-        if session_id in self.active_connections:
-            websocket = self.active_connections[session_id]
+        """Send message to specific session, gracefully handling disconnections."""
+        if session_id not in self.active_connections:
+            return  # Session already disconnected
+
+        websocket = self.active_connections[session_id]
+        try:
             await websocket.send_json(message)
+        except (ConnectionClosed, ConnectionClosedOK, WebSocketDisconnect, ClientDisconnected) as e:
+            # Client disconnected - remove from active connections and stop trying to send
+            logger.info(f"Client {session_id[:12]}... disconnected during send: {type(e).__name__}")
+            if session_id in self.active_connections:
+                del self.active_connections[session_id]
+            if session_id in self.debug_mode:
+                del self.debug_mode[session_id]
+        except Exception as e:
+            # Other unexpected errors
+            logger.error(f"Error sending message to {session_id[:12]}...: {e}")
+            # Also remove from active connections on other errors
+            if session_id in self.active_connections:
+                del self.active_connections[session_id]
 
     async def send_progress(self, session_id: str, node_name: str, retry_count: int = 0):
         """Send progress update."""
