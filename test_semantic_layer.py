@@ -213,7 +213,7 @@ async def send_query_and_display_response(
     # Receive messages
     while not completed:
         try:
-            message = await asyncio.wait_for(websocket.recv(), timeout=60)
+            message = await asyncio.wait_for(websocket.recv(), timeout=180)
             data = json.loads(message)
 
             msg_type = data.get("type")
@@ -456,7 +456,7 @@ async def send_query_and_display_response(
                 print(f"  Full data: {json.dumps(data, indent=2)}")
 
         except asyncio.TimeoutError:
-            print_error("Timeout waiting for response (60s)")
+            print_error("Timeout waiting for response (180s)")
             return
         except Exception as e:
             print_error(f"Error receiving message: {e}")
