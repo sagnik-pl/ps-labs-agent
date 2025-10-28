@@ -29,6 +29,7 @@ class WorkflowNodes:
             self._llm = ChatOpenAI(
                 model="gpt-5-mini-2025-08-07",  # GPT-5 Mini: Cost-efficient for structured tasks
                 openai_api_key=settings.openai_api_key,
+                temperature=1,  # GPT-5 models only support temperature=1
             )
         return self._llm
 
@@ -39,6 +40,7 @@ class WorkflowNodes:
             self._llm_sql = ChatOpenAI(
                 model="gpt-5-2025-08-07",  # GPT-5: Better reasoning for SQL generation
                 openai_api_key=settings.openai_api_key,
+                temperature=1,  # GPT-5 models only support temperature=1
             )
         return self._llm_sql
 
@@ -49,6 +51,7 @@ class WorkflowNodes:
             self._llm_interpreter = ChatOpenAI(
                 model="gpt-5-2025-08-07",  # GPT-5: Deep e-commerce analysis and insights
                 openai_api_key=settings.openai_api_key,
+                temperature=1,  # GPT-5 models only support temperature=1
             )
         return self._llm_interpreter
 

@@ -3,7 +3,7 @@
 Interactive WebSocket test script for semantic layer iteration.
 
 This script connects to the production backend and sends test queries,
-displaying full semantic layer routing decisions and agent execution details.
+displaying full semantic layer routing decisions and workflow node execution details.
 
 Features:
 - Conversation context handling (new vs existing conversations)
@@ -11,26 +11,35 @@ Features:
 - Semantic layer insight extraction
 - Interactive query input for rapid iteration
 
-Recent Improvements Display:
-✨ DATA INTERPRETER NODE:
-   - Shows 11 knowledge bases used (was 7)
-   - Displays multi-intent sub-query SQL + data
-   - Highlights 5-point synthesis application
+🚀 LATEST DEPLOYMENT (Main Branch):
+✨ MODEL UPGRADES:
+   - GPT-5 (gpt-5-2025-08-07) for sql_generator_node - Better SQL reasoning
+   - GPT-5 (gpt-5-2025-08-07) for data_interpreter_node - Enhanced insights
+   - GPT-5 Mini (gpt-5-mini-2025-08-07) for 7 other nodes - Cost efficient
+   - Lazy loading: LLM instances load on first use (fast startup)
 
-✨ INTERPRETATION VALIDATOR NODE:
-   - Shows priority-based criteria (⭐ = #1 most critical)
-   - Displays multi-intent synthesis quality scores
-   - Shows criteria passed/failed
+✨ WORKFLOW NODES (12 Total):
+   1. planner_node - Creates execution plan
+   2. router_node - Routes to appropriate path
+   3. multi_intent_executor_node - Handles multi-intent queries
+   4. query_assessment_node - Assesses data availability
+   5. sql_generator_node - Generates SQL (GPT-5)
+   6. sql_validator_node - Validates SQL correctness
+   7. sql_corrector_node - Fixes SQL errors
+   8. sql_executor_node - Executes queries on Athena
+   9. data_interpreter_node - Interprets results (GPT-5)
+   10. interpretation_validator_node - Validates interpretation
+   11. output_formatter_node - Formats output
+   12. interpreter_node - Final routing/output
 
-✨ METRICS SYSTEM:
-   - Displays dual-mode metrics usage (Python + SQL)
-   - Shows template fast-path usage
-   - Indicates performance savings
-
-✨ SQL VALIDATION:
-   - Shows complexity score (0-10)
-   - Displays semantic column suggestions
-   - Highlights validation improvements
+✨ IMPROVEMENTS:
+   - Lazy loading prevents startup blocking
+   - Premium GPT-5 models for critical quality nodes
+   - 11 knowledge bases for data interpretation
+   - Multi-intent synthesis with sub-query visibility
+   - Dual-mode metrics system (Python + SQL)
+   - Template fast-path for common queries
+   - Semantic column validation
 """
 import asyncio
 import websockets
