@@ -313,12 +313,12 @@ class WorkflowNodes:
             logger.info(f"🔀 Multi-intent query detected: {query_classification['type']}")
             logger.info(f"📝 Decomposed into {len(query_decomposition.get('sub_queries', []))} sub-queries")
 
-            # Route to assessment node for validation
+            # Skip assessment, route directly to router for execution
             return {
                 **state,  # Preserve existing state
                 "query_classification": query_classification,
                 "query_decomposition": query_decomposition,
-                "next_step": "query_assessment",
+                "next_step": "router",  # Changed from "query_assessment" to skip validation retry loop
                 "messages": state.get("messages", []) + [
                     AIMessage(content=f"Analyzing query: {query_classification['reasoning']}")
                 ],
