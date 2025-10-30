@@ -204,16 +204,18 @@ async def send_query_and_display_response(
     print_section("Backend Response Stream:")
     print()
 
-    # Track response
+    # Track response with detailed timing
     completed = False
     final_response = None
     metadata = None
     progress_nodes = []
+    start_time = datetime.now()
+    stage_times = {}  # Track time per stage
 
     # Receive messages
     while not completed:
         try:
-            message = await asyncio.wait_for(websocket.recv(), timeout=180)
+            message = await asyncio.wait_for(websocket.recv(), timeout=600)  # 10 minute timeout
             data = json.loads(message)
 
             msg_type = data.get("type")
@@ -221,6 +223,7 @@ async def send_query_and_display_response(
 
             if msg_type == "started":
                 print_info(f"[{timestamp[:19]}] Started processing query")
+                print_info(f"Start time: {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
             elif msg_type == "progress":
                 # Progress data is nested in "data" key
@@ -230,15 +233,31 @@ async def send_query_and_display_response(
                 retry = data.get("retry_count", 0)  # retry_count is at root level if present
                 progress_nodes.append(node)
 
+                # Track stage start time
+                if node not in stage_times:
+                    stage_times[node] = datetime.now()
+
+                # Calculate elapsed time since query start
+                elapsed = (datetime.now() - start_time).total_seconds()
+
                 retry_str = f" (retry {retry})" if retry > 0 else ""
-                print(f"  ⏳ [{timestamp[:19]}] Progress: {progress_pct}% - {Colors.BOLD}{node}{Colors.END}{retry_str}")
+                print(f"  ⏳ [{timestamp[:19]}] [{elapsed:.2f}s elapsed] Progress: {progress_pct}% - {Colors.BOLD}{node}{Colors.END}{retry_str}")
 
             elif msg_type == "completed":
                 # Completed data is nested in "data" key (matching frontend behavior)
                 completed_data = data.get("data", {})
                 final_response = completed_data.get("response", "")
                 metadata = completed_data.get("metadata", {})
-                print_success(f"[{timestamp[:19]}] Completed!")
+
+                # Calculate total execution time
+                end_time = datetime.now()
+                total_time = (end_time - start_time).total_seconds()
+
+                print()
+                print(f"  {Colors.GREEN}{Colors.BOLD}{'='*76}{Colors.END}")
+                print_success(f"[{timestamp[:19]}] Query Completed Successfully!")
+                print(f"  {Colors.GREEN}⏱️  Total Execution Time: {Colors.BOLD}{total_time:.2f}s{Colors.END}")
+                print(f"  {Colors.GREEN}{Colors.BOLD}{'='*76}{Colors.END}")
                 completed = True
 
             elif msg_type == "error":
@@ -263,23 +282,69 @@ async def send_query_and_display_response(
                 debug_data = data.get("data", {})
                 node = data.get("node", "unknown")
 
+                # Calculate elapsed time since query start and stage start
+                elapsed_total = (datetime.now() - start_time).total_seconds()
+                stage_start = stage_times.get(node, start_time)
+                elapsed_stage = (datetime.now() - stage_start).total_seconds()
+
                 print()
-                print(f"  {Colors.CYAN}{Colors.BOLD}🔍 DEBUG - {node}{Colors.END}")
+                print(f"  {Colors.CYAN}{Colors.BOLD}{'='*76}{Colors.END}")
+                print(f"  {Colors.CYAN}{Colors.BOLD}🔍 DEBUG - {node.upper()}{Colors.END}")
+                print(f"  {Colors.CYAN}⏱️  Total Elapsed: {elapsed_total:.2f}s | Stage Time: {elapsed_stage:.2f}s{Colors.END}")
+                print(f"  {Colors.CYAN}{Colors.BOLD}{'='*76}{Colors.END}")
 
                 if node == "planner":
                     exec_plan = debug_data.get("execution_plan", {})
                     routing = debug_data.get("routing_decision", {})
+                    classification = debug_data.get("classification", {})
+                    decomposition = debug_data.get("decomposition", {})
 
                     if exec_plan:
-                        print(f"     {Colors.YELLOW}Execution Plan:{Colors.END}")
+                        print(f"     {Colors.YELLOW}📋 Execution Plan:{Colors.END}")
                         print(f"       Type: {exec_plan.get('type', 'N/A')}")
                         if exec_plan.get('platforms'):
                             print(f"       Platforms: {exec_plan.get('platforms')}")
                         if exec_plan.get('metrics'):
                             print(f"       Metrics: {exec_plan.get('metrics')}")
+                        if exec_plan.get('time_period'):
+                            print(f"       Time Period: {exec_plan.get('time_period')}")
+
+                    # Show query classification (single-intent vs multi-intent)
+                    if classification:
+                        print(f"     {Colors.YELLOW}🔍 Query Classification:{Colors.END}")
+                        print(f"       Type: {Colors.BOLD}{classification.get('type', 'N/A')}{Colors.END}")
+                        print(f"       Complexity: {classification.get('complexity', 'N/A')}")
+                        print(f"       Requires Decomposition: {classification.get('requires_decomposition', False)}")
+                        if classification.get('reasoning'):
+                            print(f"       Reasoning: {classification.get('reasoning')[:200]}")
+
+                    # Show decomposition details (CRITICAL for multi-intent queries)
+                    if decomposition and decomposition.get('sub_queries'):
+                        sub_queries = decomposition.get('sub_queries', [])
+                        original_goal = decomposition.get('original_goal', 'N/A')
+
+                        print()
+                        print(f"     {Colors.GREEN}{Colors.BOLD}🎯 MULTI-INTENT QUERY DECOMPOSITION:{Colors.END}")
+                        print(f"     {Colors.GREEN}Original Goal: {original_goal}{Colors.END}")
+                        print(f"     {Colors.GREEN}Breaking into {len(sub_queries)} sub-queries:{Colors.END}")
+                        print()
+
+                        for sq in sub_queries:
+                            sq_id = sq.get('id', 'N/A')
+                            question = sq.get('question', 'N/A')
+                            intent = sq.get('intent', 'N/A')
+                            deps = sq.get('dependencies', [])
+                            exec_order = sq.get('execution_order', 0)
+
+                            print(f"       {Colors.BOLD}{sq_id}{Colors.END}: {question}")
+                            print(f"          Intent: {intent}")
+                            print(f"          Execution Order: {exec_order}")
+                            if deps:
+                                print(f"          Dependencies: {deps}")
+                            print()
 
                     if routing:
-                        print(f"     {Colors.YELLOW}Routing:{Colors.END}")
+                        print(f"     {Colors.YELLOW}🔀 Routing Decision:{Colors.END}")
                         print(f"       Agent: {routing.get('agent', 'N/A')}")
                         print(f"       Confidence: {routing.get('confidence', 'N/A')}")
 
@@ -290,18 +355,28 @@ async def send_query_and_display_response(
                     used_template = debug_data.get("used_template", None)
                     template_name = debug_data.get("template_name", None)
                     metrics_used = debug_data.get("metrics_used", [])
+                    tables_used = debug_data.get("tables_filtered", [])
+
+                    print(f"     {Colors.YELLOW}📝 SQL Generation Details:{Colors.END}")
 
                     # Show template usage (performance optimization)
                     if used_template:
-                        print(f"     {Colors.GREEN}⚡ Fast Path: Used Template '{template_name}'{Colors.END}")
-                        print(f"       (200-500ms faster than LLM generation)")
+                        print(f"       {Colors.GREEN}⚡ Fast Path: Used Template '{template_name}'{Colors.END}")
+                        print(f"         (200-500ms faster than LLM generation)")
 
                     # Show metrics system improvements
                     if metrics_used:
-                        print(f"     {Colors.CYAN}📊 Dual-Mode Metrics Used:{Colors.END}")
+                        print(f"       {Colors.CYAN}📊 Dual-Mode Metrics Used:{Colors.END}")
                         for metric in metrics_used[:3]:
-                            print(f"       • {metric} (Python + SQL)")
+                            print(f"         • {metric} (Python + SQL)")
 
+                    # Show tables filtered (semantic layer)
+                    if tables_used:
+                        print(f"       {Colors.CYAN}🗄️  Tables Selected by Semantic Layer:{Colors.END}")
+                        for table in tables_used[:5]:
+                            print(f"         • {table}")
+
+                    print()
                     print(f"     {Colors.YELLOW}Generated SQL{retry_str}:{Colors.END}")
                     print(f"     ```sql")
                     for line in sql.split('\n'):
@@ -342,32 +417,73 @@ async def send_query_and_display_response(
                         print(f"     {Colors.YELLOW}Next:{Colors.END} {next_step}")
 
                 elif node == "multi_intent_executor":
-                    # NEW: Show multi-intent sub-query breakdown
+                    # Enhanced multi-intent sub-query breakdown with full details
                     sub_results = debug_data.get("sub_query_results", {})
                     original_goal = debug_data.get("original_goal", "")
                     num_sub_queries = len(sub_results)
 
-                    print(f"     {Colors.YELLOW}Multi-Intent Execution:{Colors.END}")
-                    print(f"       Original Goal: {original_goal}")
-                    print(f"       Sub-queries: {num_sub_queries}")
+                    print(f"     {Colors.GREEN}{Colors.BOLD}🔄 MULTI-INTENT EXECUTION RESULTS:{Colors.END}")
+                    print(f"     {Colors.GREEN}Original Goal: {original_goal}{Colors.END}")
+                    print(f"     {Colors.GREEN}Total Sub-queries: {num_sub_queries}{Colors.END}")
                     print()
 
-                    for sq_id, result in sub_results.items():
+                    for idx, (sq_id, result) in enumerate(sub_results.items(), 1):
                         status_icon = "✅" if result.get("execution_status") == "success" else "❌"
-                        print(f"       {status_icon} {Colors.BOLD}{sq_id}{Colors.END}: {result.get('question', 'N/A')}")
-                        print(f"          Intent: {result.get('intent', 'N/A')}")
+                        exec_status = result.get("execution_status", "unknown")
 
+                        print(f"     {Colors.CYAN}{'─'*72}{Colors.END}")
+                        print(f"     {status_icon} {Colors.BOLD}{Colors.CYAN}Sub-Query {idx}/{num_sub_queries}: {sq_id}{Colors.END}")
+                        print(f"     {Colors.CYAN}{'─'*72}{Colors.END}")
+
+                        print(f"       {Colors.YELLOW}Question:{Colors.END} {result.get('question', 'N/A')}")
+                        print(f"       {Colors.YELLOW}Intent:{Colors.END} {result.get('intent', 'N/A')}")
+                        print(f"       {Colors.YELLOW}Status:{Colors.END} {exec_status}")
+
+                        # Show SQL query (CRITICAL for debugging)
                         sql = result.get('sql', 'N/A')
-                        if sql and sql != 'N/A' and len(sql) < 200:
-                            print(f"          SQL: {sql}")
-                        elif sql and sql != 'N/A':
-                            print(f"          SQL: {sql[:100]}... (truncated)")
+                        if sql and sql != 'N/A':
+                            print(f"       {Colors.YELLOW}Generated SQL:{Colors.END}")
+                            if len(sql) < 400:
+                                print(f"       ```sql")
+                                for line in sql.split('\n'):
+                                    print(f"       {line}")
+                                print(f"       ```")
+                            else:
+                                # Show first few lines for long queries
+                                lines = sql.split('\n')
+                                print(f"       ```sql")
+                                for line in lines[:10]:
+                                    print(f"       {line}")
+                                print(f"       ... (truncated, {len(lines)} total lines)")
+                                print(f"       ```")
 
+                        # Show data snapshot (CRITICAL for understanding results)
                         data = result.get('data', 'No data')
-                        if isinstance(data, str) and len(data) < 150:
-                            print(f"          Data: {data}")
-                        elif isinstance(data, str):
-                            print(f"          Data: {data[:150]}... (truncated)")
+                        print(f"       {Colors.YELLOW}Data Snapshot:{Colors.END}")
+                        if isinstance(data, str):
+                            if len(data) < 300:
+                                print(f"       {data}")
+                            else:
+                                print(f"       {data[:300]}...")
+                                print(f"       (Total length: {len(data)} characters)")
+                        elif isinstance(data, dict):
+                            # Show structured data
+                            import json
+                            try:
+                                data_str = json.dumps(data, indent=2)
+                                if len(data_str) < 300:
+                                    print(f"       {data_str}")
+                                else:
+                                    print(f"       {data_str[:300]}...")
+                            except:
+                                print(f"       {str(data)[:300]}...")
+                        else:
+                            print(f"       {str(data)[:300]}")
+
+                        # Show error if failed
+                        if exec_status != "success" and result.get('error'):
+                            print(f"       {Colors.RED}Error:{Colors.END} {result.get('error')}")
+
                         print()
 
                 elif node == "sql_executor":
@@ -375,16 +491,31 @@ async def send_query_and_display_response(
                     columns = debug_data.get("columns", [])
                     sample_rows = debug_data.get("sample_rows", [])
                     exec_time = debug_data.get("execution_time_ms", 0)
+                    query_id = debug_data.get("query_id", "N/A")
 
-                    print(f"     {Colors.YELLOW}Query Results:{Colors.END}")
-                    print(f"       Rows: {row_count}")
-                    print(f"       Columns: {columns}")
-                    print(f"       Execution time: {exec_time}ms")
+                    print(f"     {Colors.YELLOW}📊 Query Execution Results:{Colors.END}")
+                    print(f"       Athena Query ID: {query_id}")
+                    print(f"       Rows Returned: {Colors.BOLD}{row_count}{Colors.END}")
+                    print(f"       Columns: {len(columns)} ({', '.join(columns[:5])}{'...' if len(columns) > 5 else ''})")
+                    print(f"       Execution Time: {Colors.BOLD}{exec_time}ms{Colors.END}")
 
-                    if sample_rows:
-                        print(f"     {Colors.YELLOW}Sample Data (first 3 rows):{Colors.END}")
-                        for i, row in enumerate(sample_rows, 1):
+                    # Performance indicator
+                    if exec_time < 1000:
+                        perf_indicator = f"{Colors.GREEN}⚡ Fast{Colors.END}"
+                    elif exec_time < 5000:
+                        perf_indicator = f"{Colors.YELLOW}⏱️  Normal{Colors.END}"
+                    else:
+                        perf_indicator = f"{Colors.RED}🐌 Slow{Colors.END}"
+                    print(f"       Performance: {perf_indicator}")
+
+                    if sample_rows and row_count > 0:
+                        print(f"     {Colors.YELLOW}📋 Sample Data (first 5 rows):{Colors.END}")
+                        for i, row in enumerate(sample_rows[:5], 1):
                             print(f"       Row {i}: {row}")
+                        if row_count > 5:
+                            print(f"       ... ({row_count - 5} more rows not shown)")
+                    elif row_count == 0:
+                        print(f"     {Colors.RED}⚠️  No data returned{Colors.END}")
 
                 elif node == "data_interpreter":
                     interpretation = debug_data.get("interpretation", "")
@@ -392,8 +523,10 @@ async def send_query_and_display_response(
                     knowledge_bases = debug_data.get("knowledge_bases_used", [])
                     is_multi_intent = debug_data.get("is_multi_intent", False)
                     sub_query_count = debug_data.get("sub_query_count", 0)
+                    word_count = len(interpretation.split()) if interpretation else 0
 
-                    print(f"     {Colors.YELLOW}Interpretation ({interpretation_len} chars):{Colors.END}")
+                    print(f"     {Colors.YELLOW}💡 Data Interpretation Generated:{Colors.END}")
+                    print(f"       Length: {interpretation_len} characters ({word_count} words)")
 
                     # Show knowledge base improvements
                     if knowledge_bases:
@@ -403,13 +536,15 @@ async def send_query_and_display_response(
 
                     # Show multi-intent handling
                     if is_multi_intent:
-                        print(f"     {Colors.GREEN}🔄 Multi-Intent Query Detected:{Colors.END}")
-                        print(f"       Sub-queries: {sub_query_count}")
+                        print(f"     {Colors.GREEN}🔄 Multi-Intent Synthesis Applied:{Colors.END}")
+                        print(f"       Sub-queries Synthesized: {sub_query_count}")
                         print(f"       Individual SQL + results shown ✓")
-                        print(f"       Synthesis requirements applied ✓")
+                        print(f"       5-point synthesis requirements applied ✓")
+                        print(f"       Cross-referencing and unified narrative ✓")
 
-                    # Show first 300 characters as preview
-                    preview = interpretation[:300] + ("..." if len(interpretation) > 300 else "")
+                    # Show interpretation preview (first 500 chars for better context)
+                    print(f"     {Colors.YELLOW}📄 Interpretation Preview:{Colors.END}")
+                    preview = interpretation[:500] + ("..." if len(interpretation) > 500 else "")
                     for line in preview.split('\n'):
                         print(f"       {line}")
 
@@ -456,16 +591,27 @@ async def send_query_and_display_response(
                 print(f"  Full data: {json.dumps(data, indent=2)}")
 
         except asyncio.TimeoutError:
-            print_error("Timeout waiting for response (180s)")
+            print_error("Timeout waiting for response (600s / 10 minutes)")
             return
         except Exception as e:
             print_error(f"Error receiving message: {e}")
             return
 
-    # Display final response
+    # Display final response with timing summary
     print()
     print_header("FINAL RESPONSE")
     print(final_response)
+
+    # Display execution time breakdown
+    print()
+    print_header("EXECUTION TIME BREAKDOWN")
+    if stage_times:
+        print_section("Time spent in each stage:")
+        total_time = (datetime.now() - start_time).total_seconds()
+        for stage, stage_start in stage_times.items():
+            # Calculate approximate time (from stage start to next stage or end)
+            print(f"  • {stage}: Started at +{(stage_start - start_time).total_seconds():.2f}s")
+        print(f"\n  {Colors.BOLD}Total: {total_time:.2f}s{Colors.END}")
 
     # Display semantic layer insights
     if metadata:
