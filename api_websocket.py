@@ -381,12 +381,44 @@ async def process_query_with_progress(
                         })
                     elif node_name == "sql_executor":
                         # Show SQL execution results
-                        query_result = node_output.get("query_result", {})
+                        # raw_data is a string formatted by athena_query_tool
+                        raw_data = node_output.get("raw_data", "")
+
+                        # Parse the string result to extract debug info
+                        row_count = 0
+                        columns = []
+                        sample_rows = []
+
+                        if raw_data and not raw_data.startswith("Error") and not raw_data.startswith("No results"):
+                            try:
+                                # Format is: "Query executed successfully. Results:\n{df.to_string()}"
+                                if "Results:\n" in raw_data:
+                                    results_part = raw_data.split("Results:\n", 1)[1]
+                                    lines = results_part.strip().split("\n")
+
+                                    if len(lines) > 0:
+                                        # First line is column headers (with index column)
+                                        # Count data rows (excluding header)
+                                        row_count = max(0, len(lines) - 1)
+
+                                        # Extract column names from header (split by whitespace)
+                                        header_parts = lines[0].split()
+                                        # Skip first column (index), rest are data columns
+                                        columns = header_parts[1:] if len(header_parts) > 1 else header_parts
+
+                                        # Get first 3 data rows as sample
+                                        sample_rows = lines[1:4] if len(lines) > 1 else []
+                            except Exception as parse_error:
+                                # If parsing fails, just show raw_data length as indicator
+                                import logging
+                                logging.getLogger(__name__).warning(f"Failed to parse raw_data for debug: {parse_error}")
+
                         await manager.send_debug(session_id, "sql_executor", {
-                            "row_count": len(query_result.get("rows", [])),
-                            "columns": query_result.get("columns", []),
-                            "sample_rows": query_result.get("rows", [])[:3],  # First 3 rows as sample
-                            "execution_time_ms": query_result.get("execution_time_ms", 0),
+                            "row_count": row_count,
+                            "columns": columns,
+                            "sample_rows": sample_rows,
+                            "execution_time_ms": 0,  # Not available from string format
+                            "has_data": bool(raw_data and not raw_data.startswith("Error") and not raw_data.startswith("No results")),
                         })
                     elif node_name == "data_interpreter":
                         # Show data interpretation
