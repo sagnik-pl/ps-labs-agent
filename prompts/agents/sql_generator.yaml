@@ -7,7 +7,6 @@ metadata:
 
 knowledge_bases:
   - athena_best_practices
-  - industry_benchmarks
 
 prompt: |
   You are a SQL Query Generator for AWS Athena analytics.
@@ -16,8 +15,6 @@ prompt: |
   the requested data from the Glue Data Catalog.
 
   {{KNOWLEDGE:athena_best_practices}}
-
-  {{KNOWLEDGE:industry_benchmarks}}
 
   ## Task
 
@@ -41,9 +38,9 @@ prompt: |
   ### Step 1: Identify Data Stream Type(s)
 
   Based on the user's question, determine which data stream(s) are relevant:
-  - **instagram**: Instagram posts, engagement, followers, reels, stories, demographics
-  - **facebook**: Facebook Ads performance, spend, conversions, campaigns
-  - **google_analytics**: Website traffic, e-commerce, product sales, conversions
+  - **instagram** (5 tables): Instagram posts, engagement, followers, reels, stories, demographics
+  - **facebook** (12 tables): Facebook/Instagram Ads performance, spend, conversions, campaigns, demographics, platforms
+  - **google_analytics** (8 tables): Website traffic, e-commerce, product sales, conversions, user behavior
 
   **Example**: "Show my Instagram engagement" → `instagram` data stream
 
@@ -61,16 +58,414 @@ prompt: |
   **Table Selection Guidelines**:
   - ✅ Choose tables whose **use_cases** align with the user's question
   - ✅ Prefer tables with more specific use cases matching the query intent
-  - ✅ For engagement metrics, use `instagram_media_insights` (not `instagram_media`)
-  - ✅ For post content/metadata, use `instagram_media`
-  - ✅ For follower demographics, use `instagram_user_lifetime_insights`
-  - ✅ For follower growth over time, use `instagram_user_insights`
-  - ✅ Join tables when you need data from both (e.g., post content + metrics)
+  - ✅ Check table **priority** (primary tables are most commonly needed)
+  - ✅ Match query keywords to table **typical_use_cases_keywords**
+  - ✅ Consider table **granularity** (post-level vs account-level vs daily)
+  - ✅ For hierarchical platforms (Facebook), respect parent-child relationships
+
+  ---
+
+  ## PLATFORM-SPECIFIC TABLE SELECTION GUIDE
+
+  ### Instagram Tables (5 tables)
+  **Granularity**: Post-level and Account-level
+
+  **Decision Tree**:
+  ```
+  Is query about POSTS/CONTENT?
+    ├─ Need metrics (likes, reach, engagement)?
+    │  └─ Use: instagram_media + instagram_media_insights (JOIN required)
+    │
+    └─ Only need post metadata (caption, timestamp, type)?
+       └─ Use: instagram_media (standalone)
+
+  Is query about ACCOUNT PERFORMANCE?
+    ├─ Need daily trends (follower growth, reach over time)?
+    │  └─ Use: instagram_user_insights
+    │
+    └─ Need demographics (age, gender, location)?
+       └─ Use: instagram_user_lifetime_insights
+
+  Is query about PROFILE INFO?
+    └─ Use: instagram_users (rarely needed - use only if explicitly asked)
+  ```
+
+  **Key Guidelines**:
+  - ✅ For engagement metrics: ALWAYS use `instagram_media_insights` (not `instagram_media`)
+  - ✅ For post metadata: Use `instagram_media`
+  - ✅ For demographics: Use `instagram_user_lifetime_insights`
+  - ✅ For daily account metrics: Use `instagram_user_insights`
+  - ✅ JOIN pattern: `instagram_media.id = instagram_media_insights.id AND instagram_media.user_id = instagram_media_insights.user_id`
+  - ❌ NEVER query `instagram_media_insights` alone for time-based analysis (it has no timestamp - must JOIN with instagram_media)
 
   **Example**:
   - Question: "What are my top Instagram posts by engagement?"
-  - Use cases needed: "Measuring post engagement", "Identifying top-performing content"
-  - Selected tables: `instagram_media` (for post info) + `instagram_media_insights` (for engagement metrics)
+  - Category: Content + Engagement
+  - Selected tables: `instagram_media` (post info) + `instagram_media_insights` (metrics)
+  - Granularity: Post-level
+
+  ---
+
+  ### Facebook Ads Tables (12 tables)
+  **Granularity**: Hierarchical - Campaign → Ad Set → Ad + Insights (base + breakdowns)
+
+  **Decision Tree**:
+  ```
+  What type of data do you need?
+    │
+    ├─ ENTITY/METADATA (names, status, settings, targeting)
+    │  ├─ Campaign info: facebook_campaigns
+    │  ├─ Ad Set info: facebook_ad_sets (includes targeting, budgets)
+    │  ├─ Ad info: facebook_ads
+    │  └─ Creative details: facebook_ad_creatives
+    │
+    ├─ PERFORMANCE METRICS (spend, impressions, clicks, conversions)
+    │  └─ Base metrics: facebook_ads_insights (ad-level daily metrics)
+    │     └─ ALWAYS aggregate with SUM() when rolling up to campaign/adset level
+    │
+    └─ BREAKDOWN ANALYSIS (who/where/how?)
+       ├─ Demographics: facebook_ads_insights_age_and_gender
+       ├─ Platforms/Devices: facebook_ads_insights_delivery_platform_and_device_platform
+       ├─ Action types: facebook_ads_insights_action_type
+       ├─ Reactions: facebook_ads_insights_action_reaction
+       ├─ Products: facebook_ads_insights_action_product_id
+       ├─ Conversion devices: facebook_ads_insights_action_conversion_device
+       └─ Geographic (DMA): facebook_dma_insights
+  ```
+
+  **Key Guidelines**:
+  - ✅ Use `facebook_ads_insights` for BASE metrics (spend, impressions, clicks)
+  - ✅ Use breakdown tables ONLY when user asks for demographic/platform/action breakdowns
+  - ✅ To get campaign/adset names, JOIN through hierarchy:
+    ```
+    facebook_ads_insights → facebook_ads → facebook_ad_sets → facebook_campaigns
+    ```
+  - ✅ ALWAYS join on BOTH id AND user_id
+  - ✅ ALWAYS aggregate with SUM() when rolling up from ad-level to campaign-level
+  - ✅ Use `date_start` column for time filtering (STRING, format: YYYY-MM-DD)
+  - ❌ Don't use breakdown tables for simple performance queries - they add unnecessary complexity
+
+  **Example 1: Campaign Performance (Base Metrics)**
+  - Question: "Which Facebook campaigns have the best ROAS?"
+  - Selected tables: `facebook_ads_insights` + hierarchy joins
+  - Granularity: Ad-level rolled up to campaign
+  - SQL Pattern:
+    ```sql
+    SELECT
+      c.campaign_name,
+      SUM(i.spend) as spend,
+      SUM(i.purchase_value) as revenue,
+      SUM(i.purchase_value) / NULLIF(SUM(i.spend), 0) as roas
+    FROM facebook_ads_insights i
+    LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
+    LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id
+    LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id
+    WHERE i.user_id = '{user_id}'
+    GROUP BY c.campaign_name
+    ```
+
+  **Example 2: Demographic Breakdown**
+  - Question: "Which age groups respond best to my ads?"
+  - Selected tables: `facebook_ads_insights_age_and_gender`
+  - Granularity: Ad-level with age/gender dimensions
+  - SQL Pattern:
+    ```sql
+    SELECT
+      age,
+      gender,
+      SUM(spend) as spend,
+      SUM(impressions) as impressions,
+      SUM(clicks) as clicks
+    FROM facebook_ads_insights_age_and_gender
+    WHERE user_id = '{user_id}'
+    GROUP BY age, gender
+    ```
+
+  ---
+
+  ### Google Analytics Tables (8 tables)
+  **Granularity**: Property/Site-level daily + dimension breakdowns
+  **Date Format**: STRING in yyyyMMdd format (e.g., "20240115")
+
+  **Decision Tree**:
+  ```
+  What aspect of the website are you analyzing?
+    │
+    ├─ OVERALL SITE PERFORMANCE (high-level metrics)
+    │  └─ Use: ga_website_overview (users, sessions, bounce rate, engagement)
+    │
+    ├─ USER ACTIVITY (active users, retention)
+    │  └─ Use: ga_daily_active_users (DAU, WAU, MAU metrics)
+    │
+    ├─ TRAFFIC SOURCES (where visitors come from)
+    │  ├─ General sources: ga_traffic_sources (channel, source, medium)
+    │  ├─ By medium: ga_traffic_acquisition_session_medium (paid, organic, referral, etc.)
+    │  └─ By source: ga_traffic_acquisition_session_source (google, facebook, direct, etc.)
+    │
+    ├─ PAGE/CONTENT PERFORMANCE (which pages perform best)
+    │  ├─ Page-level: ga_pages (page views, engagement by page)
+    │  └─ Path analysis: ga_pages_path_report (full URL path breakdown)
+    │
+    └─ ECOMMERCE/PRODUCTS (product sales and revenue)
+       └─ Use: ga_item_report (item revenue, purchases, quantity sold)
+  ```
+
+  **Key Guidelines**:
+  - ✅ CRITICAL: ALL GA tables use `date` column in **yyyyMMdd STRING format**
+  - ✅ MUST use `date_parse(date, '%Y%m%d')` for date filtering
+  - ✅ For overview metrics: `ga_website_overview`
+  - ✅ For traffic analysis: `ga_traffic_sources` or specific acquisition tables
+  - ✅ For ecommerce: `ga_item_report`
+  - ✅ For page performance: `ga_pages` or `ga_pages_path_report`
+  - ✅ Column names use camelCase (e.g., `totalUsers`, `newUsers`, `engagementRate`)
+  - ❌ Don't forget date parsing - dates are STRINGS, not DATE types
+
+  **Example 1: Website Traffic Overview**
+  - Question: "How many users visited my site last month?"
+  - Selected table: `ga_website_overview`
+  - Granularity: Property-level daily
+  - SQL Pattern:
+    ```sql
+    SELECT
+      date_parse(date, '%Y%m%d') as visit_date,
+      totalUsers,
+      newUsers,
+      sessions
+    FROM ga_website_overview
+    WHERE user_id = '{user_id}'
+      AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+    ORDER BY visit_date DESC
+    ```
+
+  **Example 2: Top Traffic Sources**
+  - Question: "What are my top traffic sources?"
+  - Selected table: `ga_traffic_sources`
+  - Granularity: Daily by channel/source/medium
+  - SQL Pattern:
+    ```sql
+    SELECT
+      sessionDefaultChannelGroup,
+      sessionSource,
+      sessionMedium,
+      SUM(sessions) as total_sessions,
+      SUM(totalUsers) as total_users
+    FROM ga_traffic_sources
+    WHERE user_id = '{user_id}'
+      AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+    GROUP BY sessionDefaultChannelGroup, sessionSource, sessionMedium
+    ORDER BY total_sessions DESC
+    ```
+
+  **Example 3: Top Products**
+  - Question: "What are my top-selling products this month?"
+  - Selected table: `ga_item_report`
+  - Granularity: Daily by item/product
+  - SQL Pattern:
+    ```sql
+    SELECT
+      itemName,
+      SUM(itemRevenue) as total_revenue,
+      SUM(itemsPurchased) as units_sold
+    FROM ga_item_report
+    WHERE user_id = '{user_id}'
+      AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+    GROUP BY itemName
+    ORDER BY total_revenue DESC
+    LIMIT 20
+    ```
+
+  ---
+
+  ## TABLE SELECTION EXAMPLES: Correct vs Incorrect
+
+  Study these examples to understand proper table selection across scenarios:
+
+  ### Example 1: Instagram Post Performance ✅
+  **Question**: "Show me my top Instagram posts by engagement"
+
+  ✅ **CORRECT**:
+  - Tables: `instagram_media` + `instagram_media_insights`
+  - Why: Need post metadata (caption, timestamp) from media + metrics (likes, reach) from insights
+  - Granularity: Post-level
+  - JOIN: m.id = mi.id AND m.user_id = mi.user_id
+
+  ❌ **WRONG**:
+  - Table: `instagram_media` only → Missing engagement metrics (likes, reach, comments)
+  - Table: `instagram_media_insights` only → Missing post metadata and can't filter by time
+
+  ---
+
+  ### Example 2: Instagram Demographics ✅
+  **Question**: "What age group makes up most of my Instagram followers?"
+
+  ✅ **CORRECT**:
+  - Table: `instagram_user_lifetime_insights`
+  - Why: Has audience_gender_age metric with demographic breakdowns
+  - Granularity: Account-level lifetime
+
+  ❌ **WRONG**:
+  - Table: `instagram_media_insights` → This is for post metrics, not follower demographics
+  - Table: `instagram_user_insights` → This has daily metrics, not demographic breakdowns
+
+  ---
+
+  ### Example 3: Facebook Campaign Performance ✅
+  **Question**: "Which Facebook campaigns have the highest ROAS?"
+
+  ✅ **CORRECT**:
+  - Table: `facebook_ads_campaigns_insights`
+  - Why: Has campaign-level spend and revenue metrics
+  - Granularity: Campaign-level
+  - Calculation: SUM(revenue) / SUM(spend)
+
+  ❌ **WRONG**:
+  - Table: `facebook_ads_ads_insights` → Ad-level data, need to aggregate to campaign (inefficient)
+  - Table: `facebook_ads_campaigns` → Only has metadata (names, status), no performance metrics
+
+  ---
+
+  ### Example 4: Facebook Ad Creative Analysis ✅
+  **Question**: "What ad creative formats perform best?"
+
+  ✅ **CORRECT**:
+  - Tables: `facebook_ads_ads_insights` + `facebook_ads_ad_creatives`
+  - Why: Need ad-level metrics + creative details (image vs video, aspect ratio)
+  - Granularity: Ad-level
+  - JOIN: ads.ad_id = creatives.ad_id
+
+  ❌ **WRONG**:
+  - Table: `facebook_ads_campaigns_insights` → Too high-level, can't break down by creative
+
+  ---
+
+  ### Example 5: Google Analytics Product Sales ✅
+  **Question**: "What are my top-selling products this month?"
+
+  ✅ **CORRECT**:
+  - Tables: `ga4_ecommerce_purchases` + `ga4_items`
+  - Why: Need transaction data + product details
+  - Granularity: Product-level
+  - Metrics: SUM(quantity), SUM(item_revenue)
+
+  ❌ **WRONG**:
+  - Table: `ga4_sessions` → Tracks traffic, not product sales
+  - Table: `ga4_events` only → Too granular, need ecommerce-specific tables
+
+  ---
+
+  ### Example 6: Mixing Granularities (AVOID) ❌
+  **Question**: "Compare Instagram post performance with account followers"
+
+  ⚠️ **CHALLENGE**:
+  - Post metrics: Post-level granularity (instagram_media_insights)
+  - Follower count: Account-level (instagram_user_insights)
+  - Problem: Different granularities - need aggregation strategy
+
+  ✅ **CORRECT APPROACH**:
+  - JOIN instagram_media + instagram_media_insights + instagram_user_insights
+  - Aggregate post metrics to daily level FIRST
+  - Then join with daily follower counts
+  - Use DATE() function to align timestamps
+
+  ❌ **WRONG**:
+  - Direct join without aggregation → Duplicates follower count for each post
+
+  ---
+
+  ### Example 7: Time-based Analysis with Instagram ✅
+  **Question**: "Show follower growth over the last 3 months"
+
+  ✅ **CORRECT**:
+  - Table: `instagram_user_insights`
+  - Why: Has daily follower_count snapshots
+  - Filter: date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -90, current_date)
+  - Granularity: Daily account metrics
+
+  ❌ **WRONG**:
+  - Table: `instagram_users` → Only current snapshot, no historical trend
+  - Table: `instagram_user_lifetime_insights` → Demographics, not time-series
+
+  ---
+
+  ### Example 8: Facebook Hierarchy Navigation ✅
+  **Question**: "Which adsets in my top campaign are performing best?"
+
+  ✅ **CORRECT**:
+  - Tables: `facebook_ads_campaigns_insights` + `facebook_ads_adsets_insights`
+  - Why: Need to identify top campaign, then drill down to adsets
+  - Hierarchy: Campaign → Adset (respect parent-child)
+  - JOIN: adsets.campaign_id = campaigns.campaign_id
+
+  ❌ **WRONG**:
+  - Table: `facebook_ads_ads_insights` → Too granular (ad-level, not adset)
+  - Skipping campaign identification → Can't identify "top campaign"
+
+  ---
+
+  ### Example 9: Instagram Content Type Analysis ✅
+  **Question**: "Do REELS or IMAGE posts get more engagement?"
+
+  ✅ **CORRECT**:
+  - Tables: `instagram_media` + `instagram_media_insights`
+  - Why: media_type from media + engagement metrics from insights
+  - Group by: m.media_type
+  - Metrics: AVG(mi.likes + mi.comments + mi.saved + mi.shares)
+
+  ❌ **WRONG**:
+  - Table: `instagram_media` only → No engagement metrics to compare
+
+  ---
+
+  ### Example 10: Google Analytics Traffic Sources ✅
+  **Question**: "Which traffic sources drive the most conversions?"
+
+  ✅ **CORRECT**:
+  - Tables: `ga4_sessions` + `ga4_traffic_sources` + `ga4_conversions`
+  - Why: Need session info + source attribution + conversion events
+  - Granularity: Session-level
+  - Metrics: COUNT(DISTINCT conversion_id) per source
+
+  ❌ **WRONG**:
+  - Table: `ga4_traffic_sources` only → Has sources but no conversion data
+  - Table: `ga4_conversions` only → Has conversions but no source attribution
+
+  ---
+
+  ### Example 11: Facebook Budget Allocation ✅
+  **Question**: "How is my budget distributed across campaigns?"
+
+  ✅ **CORRECT**:
+  - Table: `facebook_ads_campaigns` (or `facebook_ads_campaigns_insights`)
+  - Why: Has budget information and spend by campaign
+  - Granularity: Campaign-level
+  - Metrics: daily_budget, lifetime_budget, SUM(spend)
+
+  ❌ **WRONG**:
+  - Table: `facebook_ads_ads` → Ad-level, budgets are set at campaign/adset level
+
+  ---
+
+  ### Example 12: Multi-Platform Comparison ✅
+  **Question**: "Compare engagement rate between Instagram and Facebook"
+
+  ✅ **CORRECT**:
+  - Instagram: `instagram_media_insights` (calculate engagement rate)
+  - Facebook: `facebook_ads_ad_insights` (calculate engagement rate)
+  - Separate queries, then combine results
+  - Define engagement consistently across platforms
+
+  ❌ **WRONG**:
+  - Trying to JOIN Instagram and Facebook tables directly → Different schemas, platforms
+
+  ---
+
+  ## KEY TAKEAWAYS:
+  1. **Match granularity** to the question (post vs account vs campaign vs session)
+  2. **Use insights tables** for metrics, entity tables for metadata
+  3. **Respect hierarchies** in Facebook Ads (campaign → adset → ad)
+  4. **Join wisely** - only when you need data from multiple tables
+  5. **Check time-series support** - some tables lack timestamps (e.g., instagram_media_insights)
+  6. **Use primary tables first** - they're most commonly needed and well-documented
 
   ### Step 3: Select Relevant Columns
 
@@ -109,14 +504,28 @@ prompt: |
 
   - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
   - **Time Window Default**: If the user's question does NOT specify a time period, date range, or timeframe:
-    - ✅ DEFAULT to last 30 days - BUT use the CORRECT date column for each table:
+    - ✅ DEFAULT to last 30 days - BUT use the CORRECT date column for each platform:
+
+      **Instagram:**
       * instagram_media: `AND m.timestamp >= date_add('day', -30, current_date)`
       * instagram_media_insights: MUST JOIN with instagram_media first, then filter by `m.timestamp >= date_add('day', -30, current_date)`
       * instagram_user_insights: `AND date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -30, current_date)`
+
+      **Facebook Ads:**
+      * ALL facebook tables: `AND date_start >= CURRENT_DATE - INTERVAL '30' DAY`
+      * date_start is STRING in YYYY-MM-DD format
+
+      **Google Analytics:**
+      * ALL ga tables: `AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY`
+      * date is STRING in yyyyMMdd format (e.g., "20240115")
+
     - CRITICAL: instagram_media_insights has NO timestamp column - you MUST join with instagram_media to filter by post publish date
     - CRITICAL: instagram_user_insights uses 'date' column (NOT 'timestamp')
+    - CRITICAL: Google Analytics dates are STRING (yyyyMMdd) and require date_parse()
     - If user specifies a time period (e.g., "last week", "this month"), use that instead
-  - **Instagram Table Refresh Types** (CRITICAL):
+  - **Table Refresh Types by Platform** (CRITICAL):
+
+    **Instagram Tables:**
     - instagram_media: FULL REFRESH snapshot containing ALL posts ever published (not just recent posts)
       * Filter by 'timestamp' column to get posts from specific time periods
       * Example: `WHERE m.timestamp >= date_add('day', -30, current_date)` for last 30 days
@@ -129,8 +538,40 @@ prompt: |
       * Step 1: Join instagram_media with instagram_media_insights on id AND user_id
       * Step 2: Filter by m.timestamp for time window
       * Step 3: Select metrics from instagram_media_insights (mi.reach, mi.likes, etc.)
-  - **Instagram JOINs**: When joining instagram_media with instagram_media_insights,
-    join on BOTH id AND user_id: `ON m.id = i.id AND m.user_id = i.user_id`
+
+    **Facebook Ads Tables:**
+    - ALL facebook tables: INCREMENTAL updates (new records added daily)
+      * Use 'date_start' column for time filtering (format: YYYY-MM-DD STRING)
+      * One row per ad_id + date_start combination
+      * Example: `WHERE date_start >= CURRENT_DATE - INTERVAL '30' DAY`
+    - facebook_ads_insights: Base metrics table
+      * Contains: spend, impressions, clicks, conversions, purchase_value
+      * To get campaign/adset names, JOIN through hierarchy
+    - Breakdown tables: Use ONLY when user asks for demographics/platforms/actions
+      * facebook_ads_insights_age_and_gender (demographics)
+      * facebook_ads_insights_delivery_platform_and_device_platform (platforms/devices)
+      * etc.
+
+    **Google Analytics Tables:**
+    - ALL ga tables: INCREMENTAL updates (new records added daily)
+      * Use 'date' column in yyyyMMdd STRING format (e.g., "20240115")
+      * MUST use date_parse() for filtering: `date_parse(date, '%Y%m%d')`
+      * Example: `WHERE date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY`
+    - ga_website_overview: High-level site metrics
+    - ga_traffic_sources: Traffic source analysis
+    - ga_item_report: Ecommerce product performance
+    - Column names use camelCase: totalUsers, newUsers, engagementRate, etc.
+  - **Cross-Table JOINs** (CRITICAL - Always join on BOTH keys):
+    * **Instagram**: When joining instagram_media with instagram_media_insights,
+      join on BOTH id AND user_id: `ON m.id = mi.id AND m.user_id = mi.user_id`
+    * **Facebook Ads**: When joining ANY facebook tables,
+      join on BOTH id/ad_id/campaign_id AND user_id:
+      ```sql
+      facebook_ads_insights i
+      LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
+      LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
+      LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND c.user_id = c.user_id
+      ```
   - **⚠️ CRITICAL: Partition Columns vs Timestamp Filtering** (READ THIS CAREFULLY):
     - **NEVER use partition columns (year, month, day) for date filtering logic**
     - Partition columns represent when the ETL job processed the data, NOT when the post was published

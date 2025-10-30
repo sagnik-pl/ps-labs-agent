@@ -51,11 +51,36 @@ WHERE m.user_id = 'user123'
 
 **Check**: All table names and column names exist
 
-Common Tables:
+**Instagram Tables (5):**
 - `instagram_media`
 - `instagram_media_insights`
-- `facebook_ads_insights_demographics_dma_region`
-- `google_analytics_ecommerce_purchases_item_name_report`
+- `instagram_user_insights`
+- `instagram_user_lifetime_insights`
+- `instagram_users`
+
+**Facebook Ads Tables (12):**
+- `facebook_campaigns`
+- `facebook_ad_sets`
+- `facebook_ads`
+- `facebook_ad_creatives`
+- `facebook_ads_insights`
+- `facebook_ads_insights_age_and_gender`
+- `facebook_ads_insights_delivery_platform_and_device_platform`
+- `facebook_ads_insights_action_type`
+- `facebook_ads_insights_action_reaction`
+- `facebook_ads_insights_action_product_id`
+- `facebook_ads_insights_action_conversion_device`
+- `facebook_dma_insights`
+
+**Google Analytics Tables (8):**
+- `ga_website_overview`
+- `ga_daily_active_users`
+- `ga_pages`
+- `ga_pages_path_report`
+- `ga_traffic_sources`
+- `ga_traffic_acquisition_session_medium`
+- `ga_traffic_acquisition_session_source`
+- `ga_item_report`
 
 **Validation**:
 - Has schema been checked?
@@ -254,6 +279,70 @@ SELECT
 SELECT CAST(likes AS DOUBLE) / NULLIF(reach, 0) * 100 as engagement_rate
 ```
 
+### Error 6: Wrong Date Column for Facebook Ads
+
+❌ **WRONG**:
+```sql
+SELECT * FROM facebook_ads_insights
+WHERE timestamp >= '2024-01-01'
+-- ERROR: facebook_ads_insights uses 'date_start', not 'timestamp'
+```
+
+✅ **Fix**:
+```sql
+SELECT * FROM facebook_ads_insights
+WHERE user_id = 'user123'
+  AND date_start >= '2024-01-01'
+```
+
+### Error 7: Wrong Date Format for Google Analytics
+
+❌ **WRONG**:
+```sql
+SELECT * FROM ga_website_overview
+WHERE date >= CURRENT_DATE - INTERVAL '30' DAY
+-- ERROR: GA 'date' is STRING (yyyyMMdd), not DATE type
+```
+
+✅ **Fix**:
+```sql
+-- Option 1: Parse date string to date type
+SELECT * FROM ga_website_overview
+WHERE user_id = 'user123'
+  AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+
+-- Option 2: String comparison
+SELECT * FROM ga_website_overview
+WHERE user_id = 'user123'
+  AND date >= '20240101'
+```
+
+### Error 8: Missing Hierarchical Join for Facebook Ads
+
+❌ **INCOMPLETE**:
+```sql
+-- Want campaign performance but querying ad-level data without aggregation
+SELECT campaign_name, spend
+FROM facebook_ads_insights
+WHERE user_id = 'user123'
+-- ERROR: facebook_ads_insights doesn't have campaign_name
+```
+
+✅ **Fix**:
+```sql
+-- Properly join through hierarchy: insights -> ads -> ad_sets -> campaigns
+SELECT
+  c.campaign_name,
+  SUM(i.spend) as total_spend
+FROM facebook_ads_insights i
+LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
+LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
+LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND ads.user_id = c.user_id
+WHERE i.user_id = 'user123'
+  AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY c.campaign_name
+```
+
 ### Error 5: Missing user_id Filter
 
 ❌ **CRITICAL ERROR**:
@@ -437,3 +526,132 @@ FROM instagram_media
 WHERE user_id = 'user123'
   AND LOWER(caption) LIKE '%product%'
 ```
+
+## Platform-Specific Validation Examples
+
+### Facebook Ads Query Validation
+
+**User Query**: "Show me my Facebook ad campaign performance"
+
+**Generated SQL**:
+```sql
+SELECT
+  c.campaign_name,
+  c.status,
+  SUM(i.spend) as total_spend,
+  SUM(i.impressions) as impressions,
+  SUM(i.clicks) as clicks
+FROM facebook_ads_insights i
+LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
+LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
+LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND ads.user_id = c.user_id
+WHERE i.user_id = 'user123'
+  AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY c.campaign_name, c.status
+ORDER BY total_spend DESC
+```
+
+**Validation**:
+- ✅ Has user_id filter
+- ✅ Correct date column (date_start)
+- ✅ Proper hierarchical joins (insights → ads → ad_sets → campaigns)
+- ✅ Joins on both id AND user_id
+- ✅ Proper aggregation (SUM with GROUP BY)
+- ✅ Valid syntax
+
+**Result**: VALID ✓
+
+---
+
+### Google Analytics Query Validation
+
+**User Query**: "What were my top products by revenue last month?"
+
+**Generated SQL**:
+```sql
+SELECT
+  itemName,
+  SUM(itemRevenue) as total_revenue,
+  SUM(itemsPurchased) as units_sold
+FROM ga_item_report
+WHERE user_id = 'user123'
+  AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY itemName
+ORDER BY total_revenue DESC
+LIMIT 20
+```
+
+**Validation**:
+- ✅ Has user_id filter
+- ✅ Correct date parsing (date_parse for yyyyMMdd format)
+- ✅ Proper aggregation with GROUP BY
+- ✅ Correct table (ga_item_report for ecommerce)
+- ✅ Has LIMIT for performance
+
+**Result**: VALID ✓
+
+---
+
+### Multi-Platform Query Validation
+
+**User Query**: "Compare Instagram engagement with Facebook ad spend"
+
+**Generated SQL**:
+```sql
+-- Instagram engagement (last 30 days)
+SELECT
+  'Instagram' as platform,
+  SUM(mi.likes + mi.comments + mi.saved + mi.shares) as total_engagement,
+  AVG(mi.reach) as avg_reach
+FROM instagram_media m
+LEFT JOIN instagram_media_insights mi
+  ON m.id = mi.id AND m.user_id = mi.user_id
+WHERE m.user_id = 'user123'
+  AND m.timestamp >= date_add('day', -30, current_date)
+
+UNION ALL
+
+-- Facebook ad spend (last 30 days)
+SELECT
+  'Facebook Ads' as platform,
+  NULL as total_engagement,
+  SUM(spend) as avg_reach
+FROM facebook_ads_insights
+WHERE user_id = 'user123'
+  AND date_start >= CURRENT_DATE - INTERVAL '30' DAY
+```
+
+**Validation**:
+- ✅ Both subqueries filter by user_id
+- ✅ Correct date filtering for each platform
+- ✅ Proper joins for Instagram
+- ✅ UNION ALL for combining results
+- ⚠️ NOTE: Column names don't match perfectly (avg_reach used for spend in second query) - consider aliasing
+
+**Result**: VALID with minor naming inconsistency ✓
+
+---
+
+## Platform-Specific Validation Checklist
+
+### Instagram Queries
+- [ ] Filters by user_id
+- [ ] Uses correct date column (timestamp for instagram_media)
+- [ ] Joins instagram_media with instagram_media_insights for metrics
+- [ ] Joins on both id AND user_id
+- [ ] Does NOT try to filter instagram_media_insights by timestamp directly
+
+### Facebook Ads Queries
+- [ ] Filters by user_id
+- [ ] Uses date_start column for date filtering
+- [ ] Respects hierarchy (campaigns → ad_sets → ads)
+- [ ] Joins on both id AND user_id for all joins
+- [ ] Uses SUM() for metrics when aggregating across dates or ads
+- [ ] Uses appropriate breakdown table for demographics/platforms
+
+### Google Analytics Queries
+- [ ] Filters by user_id
+- [ ] Uses date_parse() for date column (yyyyMMdd format)
+- [ ] Selects appropriate table (website_overview vs pages vs traffic_sources vs item_report)
+- [ ] Uses correct column names (camelCase format)
+- [ ] Uses CAST() for numeric fields when needed

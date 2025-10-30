@@ -15,6 +15,11 @@ WHERE user_id = '{user_id}'
 
 ## Table Schemas
 
+We have data from three platforms:
+- **Instagram** (5 tables) - Social media content and engagement
+- **Facebook Ads** (12 tables) - Advertising campaigns, performance, and breakdowns
+- **Google Analytics** (8 tables) - Website traffic, ecommerce, and user behavior
+
 ### Instagram Tables
 
 #### CRITICAL: Instagram Table Refresh Types
@@ -151,4 +156,239 @@ JOIN instagram_media_insights i
 WHERE m.user_id = '{user_id}'
 GROUP BY DATE_TRUNC('day', m.timestamp)
 ORDER BY date DESC
+```
+
+---
+
+### Facebook Ads Tables
+
+#### CRITICAL: Facebook Ads Table Structure
+
+**Hierarchical Structure:**
+- facebook_campaigns (top level)
+- facebook_ad_sets (middle level)
+- facebook_ads (bottom level - individual ads)
+- facebook_ad_creatives (creative assets)
+
+**Performance Data:**
+- facebook_ads_insights (base metrics - INCREMENTAL)
+- facebook_ads_insights_age_and_gender (demographic breakdown)
+- facebook_ads_insights_delivery_platform_and_device_platform (platform breakdown)
+- facebook_ads_insights_action_type (action breakdown)
+- facebook_ads_insights_action_reaction (reaction breakdown)
+- facebook_ads_insights_action_product_id (product breakdown)
+- facebook_ads_insights_action_conversion_device (device breakdown)
+- facebook_dma_insights (geographic DMA breakdown)
+
+#### Key Characteristics
+
+**`facebook_ads_insights` is INCREMENTAL:**
+- Updates daily with new date_start records
+- One row per ad_id + date_start combination
+- Use `date_start` column for time-based filtering
+- Contains: spend, impressions, clicks, conversions, revenue metrics
+
+**Date Filtering:**
+```sql
+-- ✅ CORRECT: Use date_start for time filtering
+WHERE date_start >= '2024-01-01'
+  AND date_start <= '2024-12-31'
+
+-- ✅ CORRECT: Last 30 days
+WHERE date_start >= CURRENT_DATE - INTERVAL '30' DAY
+```
+
+**Hierarchical Joins:**
+```sql
+-- To get campaign-level metrics from ad-level data
+SELECT
+  c.campaign_name,
+  SUM(i.spend) as total_spend,
+  SUM(i.impressions) as total_impressions
+FROM facebook_ads_insights i
+LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
+LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
+LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND ads.user_id = c.user_id
+WHERE i.user_id = '{user_id}'
+  AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY c.campaign_name
+```
+
+**ALWAYS join on id AND user_id** for:
+- Data isolation
+- Query performance
+- Correct results
+
+#### Common Query Patterns
+
+**Total Spend and ROAS:**
+```sql
+SELECT
+  SUM(spend) as total_spend,
+  SUM(purchase_value) as total_revenue,
+  SUM(purchase_value) / NULLIF(SUM(spend), 0) as roas
+FROM facebook_ads_insights
+WHERE user_id = '{user_id}'
+  AND date_start >= CURRENT_DATE - INTERVAL '30' DAY
+```
+
+**Campaign Performance:**
+```sql
+SELECT
+  c.campaign_name,
+  c.status,
+  SUM(i.spend) as spend,
+  SUM(i.impressions) as impressions,
+  SUM(i.clicks) as clicks,
+  SUM(i.clicks) * 100.0 / NULLIF(SUM(i.impressions), 0) as ctr
+FROM facebook_ads_insights i
+LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
+LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
+LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND ads.user_id = c.user_id
+WHERE i.user_id = '{user_id}'
+  AND i.date_start >= CURRENT_DATE - INTERVAL '7' DAY
+GROUP BY c.campaign_name, c.status
+ORDER BY spend DESC
+```
+
+**Demographic Breakdown:**
+```sql
+-- Use the age_and_gender breakdown table
+SELECT
+  age,
+  gender,
+  SUM(spend) as spend,
+  SUM(impressions) as impressions
+FROM facebook_ads_insights_age_and_gender
+WHERE user_id = '{user_id}'
+  AND date_start >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY age, gender
+ORDER BY spend DESC
+```
+
+---
+
+### Google Analytics Tables
+
+#### CRITICAL: Google Analytics Table Characteristics
+
+**All GA tables are INCREMENTAL:**
+- Update daily with new date records
+- Use `date` column (format: yyyyMMdd, e.g., "20240115")
+- One row per date + dimension combination
+
+**Key Tables:**
+- ga_website_overview (high-level site metrics)
+- ga_daily_active_users (user activity metrics)
+- ga_pages (page-level performance)
+- ga_pages_path_report (page path analysis)
+- ga_traffic_sources (traffic source attribution)
+- ga_traffic_acquisition_session_medium (medium breakdown)
+- ga_traffic_acquisition_session_source (source breakdown)
+- ga_item_report (ecommerce product performance)
+
+#### Date Column Format
+
+**CRITICAL:** GA date format is `yyyyMMdd` STRING, not DATE type.
+
+```sql
+-- ✅ CORRECT: Convert string date to date type for filtering
+WHERE date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+
+-- ✅ CORRECT: Direct string comparison (be careful with format)
+WHERE date >= '20240101'
+  AND date <= '20241231'
+
+-- ❌ WRONG: Treating as date directly
+WHERE date >= CURRENT_DATE - INTERVAL '30' DAY
+```
+
+#### Common Query Patterns
+
+**Website Traffic Overview:**
+```sql
+SELECT
+  date_parse(date, '%Y%m%d') as visit_date,
+  totalUsers,
+  newUsers,
+  sessions,
+  engagementRate,
+  bounceRate
+FROM ga_website_overview
+WHERE user_id = '{user_id}'
+  AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+ORDER BY visit_date DESC
+```
+
+**Traffic Source Analysis:**
+```sql
+SELECT
+  sessionDefaultChannelGroup,
+  SUM(sessions) as total_sessions,
+  SUM(totalUsers) as total_users,
+  AVG(CAST(averageSessionDuration AS DOUBLE)) as avg_duration
+FROM ga_traffic_sources
+WHERE user_id = '{user_id}'
+  AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY sessionDefaultChannelGroup
+ORDER BY total_sessions DESC
+```
+
+**Top Products (Ecommerce):**
+```sql
+SELECT
+  itemName,
+  SUM(itemRevenue) as revenue,
+  SUM(itemsPurchased) as units_sold,
+  SUM(itemRevenue) / NULLIF(SUM(itemsPurchased), 0) as avg_price
+FROM ga_item_report
+WHERE user_id = '{user_id}'
+  AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
+GROUP BY itemName
+ORDER BY revenue DESC
+LIMIT 20
+```
+
+**Page Performance:**
+```sql
+SELECT
+  pageTitle,
+  pagePath,
+  SUM(screenPageViews) as total_views,
+  AVG(CAST(averageEngagementTime AS DOUBLE)) as avg_engagement_time
+FROM ga_pages
+WHERE user_id = '{user_id}'
+  AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '7' DAY
+GROUP BY pageTitle, pagePath
+ORDER BY total_views DESC
+LIMIT 20
+```
+
+---
+
+## Cross-Platform Best Practices
+
+### Date Filtering Summary
+
+| Platform | Table | Date Column | Format | Example Filter |
+|----------|-------|-------------|--------|----------------|
+| Instagram | instagram_media | `timestamp` | TIMESTAMP | `timestamp >= date_add('day', -30, current_date)` |
+| Instagram | instagram_media_insights | (none) | N/A | JOIN with instagram_media and filter on m.timestamp |
+| Facebook | facebook_ads_insights | `date_start` | STRING (YYYY-MM-DD) | `date_start >= CURRENT_DATE - INTERVAL '30' DAY` |
+| Google Analytics | All GA tables | `date` | STRING (yyyyMMdd) | `date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY` |
+
+### Partition Key Usage
+
+**ALL tables use the same partition structure:**
+- `user_id` (ALWAYS filter on this)
+- `year`, `month`, `day` (optional for performance)
+
+```sql
+-- ✅ ALWAYS include user_id filter
+WHERE user_id = '{user_id}'
+
+-- ✅ Optional: Add partition filters for better performance
+WHERE user_id = '{user_id}'
+  AND year = '2024'
+  AND month = '10'
 ```

@@ -1,18 +1,32 @@
 version: "2.0"
-last_updated: "2025-01-27"
+last_updated: "2025-10-30"
 
 tables:
   instagram_media:
     stream_type: "instagram"
     stream_name: "media"
     description: "Instagram media posts including images, videos, carousel albums, and reels. Contains post metadata such as captions, timestamps, permalinks, and media types. Updated daily via Airbyte ingestion. CRITICAL: This is a FULL REFRESH snapshot table containing ALL media posts from the beginning of time (not just recent posts). The 'timestamp' column represents when each post was originally published on Instagram. To analyze posts from a specific time period, filter by the 'timestamp' column (e.g., timestamp >= date_add('day', -30, current_date)). For performance metrics (reach, likes, engagement), you MUST join with instagram_media_insights."
+    refresh_type: "full_refresh"
     category: "social_media"
+    subcategory: "content"
+    priority: "primary"
+    granularity: "post"
+    typical_use_cases_keywords: ["posts", "content", "reels", "images", "videos", "media type", "caption", "timestamp", "published", "posting frequency", "hashtags", "mentions", "instagram posts", "feed", "carousel"]
+
+    hierarchy:
+      level: "media"
+      parent:
+      children: ["instagram_media_insights"]
+      join_pattern: "instagram_media_insights.id = instagram_media.id AND instagram_media_insights.user_id = instagram_media.user_id"
+
     use_cases:
-      - "What are my top performing posts this month by engagement?"
-      - "How many posts have I published by media type (IMAGE, VIDEO, REELS)?"
-      - "What posts were published in a specific time period?"
-      - "Analyze posting frequency and patterns over time"
-      - "Join with media_insights to get detailed performance metrics"
+    - "What are my top performing posts this month by engagement?"
+    - "How many posts have I published by media type (IMAGE, VIDEO, REELS)?"
+    - "What posts were published in a specific time period?"
+    - "Analyze posting frequency and patterns over time"
+    - "Find posts with specific hashtags or mentions"
+    - "Compare performance across different media types"
+    - "Identify best performing content formats"
 
     columns:
       id:
@@ -32,7 +46,7 @@ tables:
         name: "media_type"
         type: "string"
         description: "Type of Instagram media post"
-        example_values: ["IMAGE", "VIDEO", "CAROUSEL_ALBUM"]
+        example_values: ["IMAGE", "VIDEO", "CAROUSEL_ALBUM", "REELS"]
         distinct_values: ["IMAGE", "VIDEO", "CAROUSEL_ALBUM", "REELS"]
         required: true
         filter_required: false
@@ -40,16 +54,16 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "media_type = 'REELS'"
-          - "media_type IN ('IMAGE', 'CAROUSEL_ALBUM')"
-          - "media_type = 'VIDEO'"
-        notes: "REELS are a subset of VIDEO type but tracked separately for analytics. Use this to segment content analysis by format."
+        - "media_type = 'REELS'"
+        - "media_type IN ('IMAGE', 'CAROUSEL_ALBUM')"
+        - "media_type = 'VIDEO'"
+        notes: "REELS are tracked separately for analytics. Use this to segment content analysis by format."
 
       thumbnail_url:
         name: "thumbnail_url"
         type: "string"
         description: "URL to the media thumbnail image hosted on Instagram CDN"
-        example_values: ["https://scontent.cdninstagram.com/v/t51.29350-15/123456789_123456789.jpg", "https://instagram.fnyc1-1.fna.fbcdn.net/v/t51.2885-15/987654321_98765.jpg"]
+        example_values: ["https://scontent.cdninstagram.com/v/t51.29350-15/123456789_123456789.jpg"]
         required: false
         filter_required: false
         aggregatable: false
@@ -68,9 +82,9 @@ tables:
         searchable: true
         important: true
         common_filters:
-          - "caption LIKE '%#hashtag%'"
-          - "caption LIKE '%@mention%'"
-          - "caption IS NOT NULL AND caption != ''"
+        - "caption LIKE '%#hashtag%'"
+        - "caption LIKE '%@mention%'"
+        - "caption IS NOT NULL AND caption != ''"
         notes: "May be NULL or empty string for media without captions. Use LIKE for hashtag or mention searches."
 
       timestamp:
@@ -84,9 +98,9 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "timestamp >= date_add('day', -30, current_date)"
-          - "timestamp BETWEEN '2024-01-01' AND '2024-12-31'"
-          - "timestamp >= TIMESTAMP '2024-01-01 00:00:00'"
+        - "timestamp >= date_add('day', -30, current_date)"
+        - "timestamp BETWEEN '2024-01-01' AND '2024-12-31'"
+        - "timestamp >= TIMESTAMP '2024-01-01 00:00:00'"
         used_in_metrics: ["posting_frequency", "time_of_day_analysis"]
         notes: "Use for time-based analysis and trend detection. Stored in UTC timezone."
 
@@ -113,7 +127,7 @@ tables:
         searchable: true
         important: true
         common_filters:
-          - "username = 'photosphere_official'"
+        - "username = 'photosphere_official'"
         notes: "Join with instagram_users table on username to get account-level information like followers_count."
 
       user_id:
@@ -128,73 +142,47 @@ tables:
         important: true
         partition_key: true
         common_filters:
-          - "user_id = '{user_id}'"
+        - "user_id = '{user_id}'"
         notes: "ALWAYS filter by this for performance and data isolation. This is different from Instagram's user ID."
 
       year:
         name: "year"
         type: "string"
-        description: "Partition column: ETL processing year (YYYY format) - NOT post publication year"
+        description: "Partition column: year of post publication (YYYY format)"
         example_values: ["2024", "2023", "2025"]
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: false
-        important: false
         partition_key: true
         system_column: true
-        common_filters:
-          - "-- AVOID: Using year for date filtering logic"
-          - "-- Use timestamp column instead for filtering by post publication date"
-        notes: "⚠️ CRITICAL: This represents when Glue ETL processed the data, NOT when the post was published. NEVER use this for date filtering logic. Use instagram_media.timestamp for filtering by post publication date. This column is ONLY for ETL metadata and partition pruning optimization."
 
+        important: false
       month:
         name: "month"
         type: "string"
-        description: "Partition column: ETL processing month (MM format, zero-padded) - NOT post publication month"
+        description: "Partition column: month of post publication (MM format, zero-padded)"
         example_values: ["01", "06", "12"]
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: false
-        important: false
         partition_key: true
         system_column: true
-        common_filters:
-          - "-- AVOID: Using month for date filtering logic"
-          - "-- Use timestamp column instead for filtering by post publication date"
-        notes: "⚠️ CRITICAL: This represents when Glue ETL processed the data, NOT when the post was published. NEVER use this for date filtering logic. Use instagram_media.timestamp for filtering by post publication date. Always zero-padded (01-12). This column is ONLY for ETL metadata."
 
+        important: false
       day:
         name: "day"
         type: "string"
-        description: "Partition column: ETL processing day (DD format, zero-padded) - NOT post publication day"
+        description: "Partition column: day of post publication (DD format, zero-padded)"
         example_values: ["01", "15", "31"]
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: false
-        important: false
         partition_key: true
         system_column: true
-        common_filters:
-          - "-- AVOID: Using day for date filtering logic"
-          - "-- Use timestamp column instead for filtering by post publication date"
-        notes: "⚠️ CRITICAL: This represents when Glue ETL processed the data, NOT when the post was published. NEVER use this for date filtering logic. Use instagram_media.timestamp for filtering by post publication date. Always zero-padded (01-31). This column is ONLY for ETL metadata."
 
+        important: false
       glue_processed_at:
         name: "glue_processed_at"
         type: "timestamp"
         description: "When this record was processed by the Glue ETL job (UTC timezone)"
-        example_values: ["2025-01-27 10:30:00.000", "2025-01-26 10:30:00.000"]
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: false
-        important: false
         system_column: true
-        notes: "ETL metadata field. Use to identify when data was last refreshed."
 
+        important: false
       source:
         name: "source"
         type: "string"
@@ -202,142 +190,109 @@ tables:
         example_values: ["airbyte"]
         distinct_values: ["airbyte"]
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: false
-        important: false
         system_column: true
-        notes: "ETL metadata field. Indicates data came from Airbyte ingestion."
 
+        important: false
     primary_key: ["id"]
     partition_keys: ["user_id", "year", "month", "day"]
 
     common_joins:
-      - table: "instagram_media_insights"
-        type: "LEFT JOIN"
-        on: ["id"]
-        description: "Join to get detailed performance metrics (impressions, reach, engagement, shares, saves)"
-        example: "LEFT JOIN instagram_media_insights ON media.id = media_insights.id AND media.user_id = media_insights.user_id"
-        example_query: |
-          SELECT
-            m.id,
-            m.caption,
-            m.media_type,
-            m.timestamp,
-            mi.likes,
-            mi.reach,
-            mi.saved AS saves,
-            mi.shares,
-            mi.comments
-          FROM ps_labs_processed_catalog.instagram_media m
-          LEFT JOIN ps_labs_processed_catalog.instagram_media_insights mi
-            ON m.id = mi.id
-            AND m.user_id = mi.user_id
-          WHERE m.user_id = '{user_id}'
-            AND m.timestamp >= date_add('day', -30, current_date)
-          ORDER BY mi.reach DESC
-          LIMIT 10
+    - table: "instagram_media_insights"
+      type: "LEFT JOIN"
+      on: ["id"]
+      description: "Join to get detailed performance metrics (impressions, reach, engagement, shares, saves)"
+      example: "LEFT JOIN instagram_media_insights ON media.id = media_insights.id AND media.user_id = media_insights.user_id"
 
-      - table: "instagram_users"
-        type: "INNER JOIN"
-        on: ["username", "user_id"]
-        description: "Join to get account-level information (followers_count, follows_count, biography)"
-        example: "INNER JOIN instagram_users ON media.username = users.username AND media.user_id = users.user_id"
-        example_query: |
-          SELECT
-            u.username,
-            u.followers_count,
-            u.media_count,
-            COUNT(m.id) as posts_in_period,
-            AVG(CASE WHEN mi.likes IS NOT NULL THEN mi.likes ELSE 0 END) as avg_likes
-          FROM ps_labs_processed_catalog.instagram_users u
-          INNER JOIN ps_labs_processed_catalog.instagram_media m
-            ON u.username = m.username
-            AND u.user_id = m.user_id
-          LEFT JOIN ps_labs_processed_catalog.instagram_media_insights mi
-            ON m.id = mi.id
-            AND m.user_id = mi.user_id
-          WHERE u.user_id = '{user_id}'
-            AND m.year = '2024'
-          GROUP BY u.username, u.followers_count, u.media_count
+    - table: "instagram_users"
+      type: "INNER JOIN"
+      on: ["username", "user_id"]
+      description: "Join to get account-level information (followers_count, follows_count, biography)"
+      example: "INNER JOIN instagram_users ON media.username = users.username AND media.user_id = users.user_id"
+
+    common_filters:
+    - column: "media_type"
+      why: "to analyze performance by content format (REELS vs IMAGE vs VIDEO)"
+    - column: "timestamp"
+      why: "to filter posts by publication date range"
+    - column: "caption"
+      why: "to search for specific hashtags or mentions"
+
+    date_filter_column: ["timestamp"]
 
     important_notes:
-      - "CRITICAL: This is a FULL REFRESH snapshot table containing ALL posts ever published (not just recent posts)"
-      - "CRITICAL: To get posts from last N days, you MUST filter by timestamp: timestamp >= date_add('day', -N, current_date)"
-      - "CRITICAL: For ANY metrics (reach, likes, engagement), you MUST join with instagram_media_insights"
-      - "CRITICAL: This table only has post metadata (caption, type, timestamp) - NO engagement metrics"
-      - "ALWAYS filter by user_id for performance and data isolation - this is critical for query performance"
-      - "Use partition keys (year, month, day) in WHERE clause for optimal performance"
-      - "The 'id' field is Instagram's media ID - use for joins with instagram_media_insights"
-      - "media_type values: IMAGE, VIDEO, CAROUSEL_ALBUM, REELS (REELS are tracked separately from VIDEO)"
-      - "timestamp is in UTC timezone - convert to user's local timezone if needed for reporting"
-      - "caption may be NULL or empty string - always check both conditions"
+    - "ALWAYS filter by user_id for performance and data isolation - this is critical for query performance"
+    - "Use partition keys (year, month, day) in WHERE clause for optimal performance"
+    - "The 'id' field is Instagram's media ID - use for joins with instagram_media_insights"
+    - "media_type values: IMAGE, VIDEO, CAROUSEL_ALBUM, REELS"
+    - "timestamp is in UTC timezone - convert to user's local timezone if needed for reporting"
+    - "This is FULL REFRESH table - get latest snapshot from most recent partition"
+    - "To analyze engagement, you MUST join with instagram_media_insights - this table only has post metadata"
 
     example_queries:
-      - description: "Get top 10 posts by reach in last 30 days (requires join with media_insights)"
-        sql: |
-          SELECT
-            m.id,
-            m.caption,
-            m.media_type,
-            m.timestamp,
-            mi.reach,
-            mi.likes,
-            mi.comments
-          FROM ps_labs_processed_catalog.instagram_media m
-          LEFT JOIN ps_labs_processed_catalog.instagram_media_insights mi
-            ON m.id = mi.id
-            AND m.user_id = mi.user_id
-          WHERE m.user_id = '{user_id}'
-            AND m.timestamp >= date_add('day', -30, current_date)
-          ORDER BY mi.reach DESC NULLS LAST
-          LIMIT 10
+    - description: "Get top 10 posts by reach in last 30 days (requires join with media_insights)"
+      sql: |
+        SELECT
+          m.id,
+          m.caption,
+          m.media_type,
+          m.timestamp,
+          mi.reach,
+          mi.likes,
+          mi.comments
+        FROM ps_labs_processed_catalog.instagram_media m
+        LEFT JOIN ps_labs_processed_catalog.instagram_media_insights mi
+          ON m.id = mi.id
+          AND m.user_id = mi.user_id
+        WHERE m.user_id = '{user_id}'
+          AND m.timestamp >= date_add('day', -30, current_date)
+        ORDER BY mi.reach DESC NULLS LAST
+        LIMIT 10
 
-      - description: "Count posts by media type for 2024"
-        sql: |
-          SELECT
-            media_type,
-            COUNT(*) as post_count,
-            COUNT(DISTINCT DATE(timestamp)) as days_posted
-          FROM ps_labs_processed_catalog.instagram_media
-          WHERE user_id = '{user_id}'
-            AND year = '2024'
-          GROUP BY media_type
-          ORDER BY post_count DESC
-
-      - description: "Get all posts with specific hashtag"
-        sql: |
-          SELECT
-            id,
-            caption,
-            media_type,
-            timestamp,
-            permalink
-          FROM ps_labs_processed_catalog.instagram_media
-          WHERE user_id = '{user_id}'
-            AND caption LIKE '%#productlaunch%'
-            AND year = '2024'
-          ORDER BY timestamp DESC
+    - description: "Count posts by media type for 2024"
+      sql: |
+        SELECT
+          media_type,
+          COUNT(*) as post_count,
+          COUNT(DISTINCT DATE(timestamp)) as days_posted
+        FROM ps_labs_processed_catalog.instagram_media
+        WHERE user_id = '{user_id}'
+          AND year = '2024'
+        GROUP BY media_type
+        ORDER BY post_count DESC
 
 
   instagram_media_insights:
     stream_type: "instagram"
     stream_name: "media_insights"
-    description: "Detailed performance metrics for individual Instagram posts including impressions, reach, engagement, saves, and shares. Updated daily via Airbyte. CRITICAL: This table has NO timestamp column. To filter by post publication date, you MUST join with instagram_media and filter by media.timestamp. Never query this table alone for time-based analysis."
+    description: "Detailed performance metrics for individual Instagram posts including impressions, reach, engagement, saves, and shares. Updated daily via Airbyte. This table contains the actual engagement numbers - join with instagram_media to get post metadata. CRITICAL: Full refresh snapshot table - contains all historical metrics. Metrics update as posts continue to receive engagement."
+    refresh_type: "full_refresh"
     category: "social_media"
+    subcategory: "engagement"
+    priority: "primary"
+    granularity: "post"
+    typical_use_cases_keywords: ["engagement", "reach", "likes", "comments", "shares", "saves", "impressions", "performance", "metrics", "post performance", "engagement rate", "reels watch time", "video views"]
+
+    hierarchy:
+      level: "media_insights"
+      parent: "instagram_media"
+      children:
+      join_pattern: "instagram_media.id = instagram_media_insights.id AND instagram_media.user_id = instagram_media_insights.user_id"
+
     use_cases:
-      - "What is the reach and engagement for my top performing posts?"
-      - "Calculate engagement rate (likes + comments + shares + saves) / reach"
-      - "Analyze REELS performance metrics (avg watch time, total view time)"
-      - "Compare performance across different media types"
-      - "Track post performance trends over time"
+    - "What is the reach and engagement for my top performing posts?"
+    - "Calculate engagement rate (likes + comments + shares + saves) / reach"
+    - "Analyze REELS performance metrics (avg watch time, total view time)"
+    - "Compare performance across different media types"
+    - "Track post performance trends over time"
+    - "Identify posts that drive profile visits and follows"
+    - "Find viral content based on shares and saves"
 
     columns:
       id:
         name: "id"
         type: "string"
         description: "Instagram media ID - matches the id in instagram_media table"
-        example_values: ["17841234567890123", "18123456789012345", "17987654321098765"]
+        example_values: ["17841234567890123", "18123456789012345"]
         primary_key: true
         required: true
         filter_required: false
@@ -345,30 +300,6 @@ tables:
         searchable: true
         important: true
         notes: "Use for joins with instagram_media table on id column. This is the foreign key relationship."
-
-      page_id:
-        name: "page_id"
-        type: "string"
-        description: "Facebook Page ID connected to the Instagram Business Account"
-        example_values: ["123456789012345", "987654321098765"]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: false
-        notes: "Links Instagram to Facebook Business Manager. Use for cross-platform analysis."
-
-      business_account_id:
-        name: "business_account_id"
-        type: "string"
-        description: "Instagram Business Account ID"
-        example_values: ["17841234567890123", "17987654321098765"]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: false
-        notes: "Instagram's internal business account identifier."
 
       likes:
         name: "likes"
@@ -381,8 +312,8 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "likes > 100"
-          - "likes >= 1000"
+        - "likes > 100"
+        - "likes >= 1000"
         used_in_metrics: ["engagement_rate", "total_engagement"]
         notes: "Use in engagement rate calculations: (likes + comments + shares + saved) / reach * 100"
 
@@ -397,8 +328,8 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "reach > 1000"
-          - "reach >= 10000"
+        - "reach > 1000"
+        - "reach >= 10000"
         used_in_metrics: ["engagement_rate", "reach_rate"]
         notes: "This is UNIQUE accounts. Different from impressions (total views including duplicates). Use as denominator for engagement rate."
 
@@ -413,7 +344,7 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "saved > 10"
+        - "saved > 10"
         used_in_metrics: ["engagement_rate", "save_rate"]
         notes: "High saves indicate valuable/educational content. Use in engagement calculations."
 
@@ -428,7 +359,7 @@ tables:
         searchable: false
         important: true
         common_filters:
-          - "shares > 20"
+        - "shares > 20"
         used_in_metrics: ["engagement_rate", "virality_score"]
         notes: "High shares indicate viral or relatable content. Use in engagement calculations."
 
@@ -442,8 +373,6 @@ tables:
         aggregatable: true
         searchable: false
         important: true
-        common_filters:
-          - "follows > 5"
         used_in_metrics: ["follower_growth", "post_conversion_rate"]
         notes: "Tracks follower acquisition by individual post. High values indicate compelling content that drives follows."
 
@@ -457,10 +386,8 @@ tables:
         aggregatable: true
         searchable: false
         important: true
-        common_filters:
-          - "comments > 10"
         used_in_metrics: ["engagement_rate", "comment_rate"]
-        notes: "High comments indicate engaging content that sparks conversation. Use in engagement calculations."
+        notes: "High comments indicate engaging content that sparks conversation."
 
       profile_visits:
         name: "profile_visits"
@@ -472,10 +399,8 @@ tables:
         aggregatable: true
         searchable: false
         important: true
-        common_filters:
-          - "profile_visits > 50"
         used_in_metrics: ["profile_visit_rate"]
-        notes: "Indicates post drove interest in the account. Use to identify content that attracts profile exploration."
+        notes: "Indicates post drove interest in the account."
 
       ig_reels_avg_watch_time:
         name: "ig_reels_avg_watch_time"
@@ -488,8 +413,6 @@ tables:
         searchable: false
         important: true
         only_for_media_type: "REELS"
-        common_filters:
-          - "ig_reels_avg_watch_time > 10000"
         used_in_metrics: ["avg_watch_time_seconds", "completion_rate"]
         notes: "REELS only - NULL for other media types. Divide by 1000 to get seconds. Higher values indicate engaging video content."
 
@@ -504,53 +427,61 @@ tables:
         searchable: false
         important: true
         only_for_media_type: "REELS"
-        common_filters:
-          - "ig_reels_video_view_total_time > 100000"
-        used_in_metrics: ["total_watch_hours", "average_completion"]
-        notes: "REELS only - NULL for other media types. Divide by 1000 to get seconds, by 60000 for minutes. Sum across posts for total watch time."
+        used_in_metrics: ["total_watch_hours"]
+        notes: "REELS only - NULL for other media types. Divide by 1000 to get seconds, by 60000 for minutes."
 
+      page_id:
+        name: "page_id"
+        type: "string"
+        description: "Facebook Page ID connected to the Instagram Business Account"
+        required: false
+        system_column: true
+
+        important: true
+      business_account_id:
+        name: "business_account_id"
+        type: "string"
+        description: "Instagram Business Account ID"
+        required: false
+        system_column: true
+
+        important: true
       user_id:
         name: "user_id"
         type: "string"
         description: "Internal user ID for data isolation (partition key)"
-        example_values: ["RxdH8RrVoNNao4dqRlHVXc3mvRh2", "AbC123XyZ456DeF789"]
         required: true
         filter_required: true
-        aggregatable: false
-        searchable: true
-        important: true
         partition_key: true
-        common_filters:
-          - "user_id = '{user_id}'"
-        notes: "ALWAYS filter by this for performance and data isolation."
+        important: true
 
       year:
         name: "year"
         type: "string"
         description: "Partition column: year (YYYY format)"
-        example_values: ["2024", "2023", "2025"]
         required: true
         partition_key: true
         system_column: true
 
+        important: false
       month:
         name: "month"
         type: "string"
         description: "Partition column: month (MM format, zero-padded)"
-        example_values: ["01", "06", "12"]
         required: true
         partition_key: true
         system_column: true
 
+        important: false
       day:
         name: "day"
         type: "string"
         description: "Partition column: day (DD format, zero-padded)"
-        example_values: ["01", "15", "31"]
         required: true
         partition_key: true
         system_column: true
 
+        important: false
       glue_processed_at:
         name: "glue_processed_at"
         type: "timestamp"
@@ -558,131 +489,106 @@ tables:
         required: true
         system_column: true
 
+        important: false
       source:
         name: "source"
         type: "string"
         description: "Data source identifier (always 'airbyte')"
-        example_values: ["airbyte"]
         required: true
         system_column: true
 
+        important: false
     primary_key: ["id"]
     partition_keys: ["user_id", "year", "month", "day"]
 
     common_joins:
-      - table: "instagram_media"
-        type: "INNER JOIN"
-        on: ["id"]
-        description: "Join to get post metadata (caption, media_type, timestamp, permalink)"
-        example: "INNER JOIN instagram_media ON media_insights.id = media.id AND media_insights.user_id = media.user_id"
-        example_query: |
-          SELECT
-            m.id,
-            m.caption,
-            m.media_type,
-            m.timestamp,
-            mi.reach,
-            mi.likes,
-            mi.comments,
-            mi.saved,
-            mi.shares,
-            (mi.likes + mi.comments + mi.saved + mi.shares) * 100.0 / NULLIF(mi.reach, 0) as engagement_rate
-          FROM ps_labs_processed_catalog.instagram_media_insights mi
-          INNER JOIN ps_labs_processed_catalog.instagram_media m
-            ON mi.id = m.id
-            AND mi.user_id = m.user_id
-          WHERE mi.user_id = '{user_id}'
-            AND mi.reach > 1000
-            AND m.year = '2024'
-          ORDER BY engagement_rate DESC
-          LIMIT 10
+    - table: "instagram_media"
+      type: "INNER JOIN"
+      on: ["id"]
+      description: "Join to get post metadata (caption, media_type, timestamp, permalink)"
+      example: "INNER JOIN instagram_media ON media_insights.id = media.id AND media_insights.user_id = media.user_id"
+
+    common_filters:
+    - column: "reach"
+      why: "to filter by post reach threshold"
+    - column: "likes"
+      why: "to find highly engaging posts"
+
+    date_filter_column:
 
     important_notes:
-      - "CRITICAL: This table has NO timestamp column - you MUST join with instagram_media to filter by post publish date"
-      - "CRITICAL: NEVER query this table alone for time-based analysis - always join with instagram_media first"
-      - "CRITICAL: To filter by time, use: JOIN instagram_media m ON ... WHERE m.timestamp >= date_add('day', -30, current_date)"
-      - "CRITICAL: DO NOT use partition columns (year, month, day) for user-facing time filters - these are ETL processing dates, not post publish dates"
-      - "ALWAYS join with instagram_media to get post context (caption, media_type, timestamp)"
-      - "ALWAYS filter by user_id for performance and data isolation"
-      - "Engagement rate formula: (likes + comments + shares + saved) / reach * 100"
-      - "ig_reels_avg_watch_time and ig_reels_video_view_total_time are ONLY for REELS - NULL for other types"
-      - "Watch times are in milliseconds - divide by 1000 for seconds, by 60000 for minutes"
-      - "reach is UNIQUE accounts, different from impressions (total views)"
-      - "Use NULLIF when dividing by reach to avoid division by zero errors"
+    - "ALWAYS join with instagram_media to get post context (caption, media_type, timestamp)"
+    - "ALWAYS filter by user_id for performance and data isolation"
+    - "Engagement rate formula: (likes + comments + shares + saved) / reach * 100"
+    - "ig_reels_avg_watch_time and ig_reels_video_view_total_time are ONLY for REELS - NULL for other types"
+    - "Watch times are in milliseconds - divide by 1000 for seconds"
+    - "reach is UNIQUE accounts, different from impressions (total views)"
+    - "Use NULLIF when dividing by reach to avoid division by zero errors"
+    - "This is FULL REFRESH table - get latest snapshot from most recent partition"
 
     example_queries:
-      - description: "Calculate engagement rate for top performing posts"
-        sql: |
-          SELECT
-            m.id,
-            m.caption,
-            m.media_type,
-            mi.reach,
-            mi.likes,
-            mi.comments,
-            mi.saved,
-            mi.shares,
-            (mi.likes + mi.comments + mi.saved + mi.shares) * 100.0 / NULLIF(mi.reach, 0) as engagement_rate_pct
-          FROM ps_labs_processed_catalog.instagram_media_insights mi
-          INNER JOIN ps_labs_processed_catalog.instagram_media m
-            ON mi.id = m.id
-            AND mi.user_id = m.user_id
-          WHERE mi.user_id = '{user_id}'
-            AND mi.reach > 0
-            AND m.timestamp >= date_add('day', -30, current_date)
-          ORDER BY engagement_rate_pct DESC
-          LIMIT 20
-
-      - description: "Analyze REELS performance by average watch time"
-        sql: |
-          SELECT
-            m.id,
-            m.caption,
-            m.timestamp,
-            mi.reach,
-            mi.ig_reels_avg_watch_time / 1000.0 as avg_watch_time_seconds,
-            mi.ig_reels_video_view_total_time / 60000.0 as total_watch_time_minutes
-          FROM ps_labs_processed_catalog.instagram_media_insights mi
-          INNER JOIN ps_labs_processed_catalog.instagram_media m
-            ON mi.id = m.id
-            AND mi.user_id = m.user_id
-          WHERE mi.user_id = '{user_id}'
-            AND m.media_type = 'REELS'
-            AND mi.ig_reels_avg_watch_time IS NOT NULL
-            AND m.year = '2024'
-          ORDER BY avg_watch_time_seconds DESC
-          LIMIT 10
+    - description: "Calculate engagement rate for top performing posts"
+      sql: |
+        SELECT
+          m.id,
+          m.caption,
+          m.media_type,
+          mi.reach,
+          mi.likes,
+          mi.comments,
+          mi.saved,
+          mi.shares,
+          (mi.likes + mi.comments + mi.saved + mi.shares) * 100.0 / NULLIF(mi.reach, 0) as engagement_rate_pct
+        FROM ps_labs_processed_catalog.instagram_media_insights mi
+        INNER JOIN ps_labs_processed_catalog.instagram_media m
+          ON mi.id = m.id
+          AND mi.user_id = m.user_id
+        WHERE mi.user_id = '{user_id}'
+          AND mi.reach > 0
+          AND m.timestamp >= date_add('day', -30, current_date)
+        ORDER BY engagement_rate_pct DESC
+        LIMIT 20
 
 
   instagram_user_insights:
     stream_type: "instagram"
     stream_name: "user_insights"
-    description: "Daily account-level insights including reach, follower count, and online followers timing. Updated daily via Airbyte. Use for tracking overall account performance and audience growth trends."
+    description: "Daily account-level insights including reach, follower count, and online followers timing. Updated daily via Airbyte as incremental data. Use for tracking overall account performance and audience growth trends. One row per day per account."
+    refresh_type: "incremental"
     category: "social_media"
+    subcategory: "account_performance"
+    priority: "primary"
+    granularity: "account_daily"
+    typical_use_cases_keywords: ["follower growth", "daily reach", "weekly reach", "monthly reach", "account performance", "audience growth", "follower count", "online followers", "best posting time", "reach trends"]
+
+    hierarchy:
+      level: "account_insights"
+      parent:
+      children:
+      join_pattern:
+
     use_cases:
-      - "Track daily follower growth and reach trends"
-      - "Analyze account reach over different time periods (daily, weekly, 28-day)"
-      - "Identify when followers are most active online"
-      - "Monitor overall account health and growth metrics"
-      - "Compare account performance across time periods"
+    - "Track daily follower growth and reach trends"
+    - "Analyze account reach over different time periods (daily, weekly, 28-day)"
+    - "Identify when followers are most active online"
+    - "Monitor overall account health and growth metrics"
+    - "Compare account performance across time periods"
+    - "Calculate follower growth rate over time"
 
     columns:
       date:
         name: "date"
         type: "string"
-        description: "Date of the insight snapshot (stored as timestamp string: YYYY-MM-DD HH:MM:SS format)"
-        example_values: ["2024-01-15 07:00:00", "2024-12-25 08:00:00", "2024-06-30 07:00:00"]
+        description: "Date of the insight snapshot (YYYY-MM-DD format)"
+        example_values: ["2024-01-15", "2024-12-25"]
         primary_key: true
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: false
         important: true
         common_filters:
-          - "SUBSTR(date, 1, 10) >= '2024-01-01'"
-          - "SUBSTR(date, 1, 10) BETWEEN '2024-01-01' AND '2024-12-31'"
-          - "date_parse(SUBSTR(date, 1, 10), '%Y-%m-%d') >= date_add('day', -30, current_date)"
-        notes: "Daily snapshot - one row per day. Use for time series analysis. CRITICAL: This table uses 'date' column (NOT 'timestamp'). instagram_user_insights has ONLY 'date', NOT 'timestamp'. For date filtering on instagram_user_insights, always use the 'date' column with SUBSTR(date, 1, 10) to extract YYYY-MM-DD portion before date comparisons."
+        - "date >= '2024-01-01'"
+        - "date BETWEEN '2024-01-01' AND '2024-12-31'"
+        - "CAST(date AS DATE) >= date_add('day', -30, current_date)"
+        notes: "Daily snapshot - one row per day. IMPORTANT: date is stored as STRING, so use CAST(date AS DATE) for date comparisons."
 
       reach:
         name: "reach"
@@ -690,26 +596,10 @@ tables:
         description: "Number of unique accounts that saw any content from this account on this day"
         example_values: ["10000", "25000", "5000"]
         required: false
-        filter_required: false
         aggregatable: true
-        searchable: false
         important: true
-        common_filters:
-          - "reach > 5000"
         used_in_metrics: ["daily_reach_trend", "reach_growth"]
-        notes: "Daily reach - unique accounts reached that day. Compare with reach_week and reach_days_28 for broader trends."
-
-      page_id:
-        name: "page_id"
-        type: "string"
-        description: "Facebook Page ID connected to the Instagram Business Account"
-        example_values: ["123456789012345", "987654321098765"]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: false
-        notes: "Links Instagram to Facebook Business Manager."
+        notes: "Daily reach - unique accounts reached that day."
 
       reach_week:
         name: "reach_week"
@@ -717,14 +607,10 @@ tables:
         description: "Number of unique accounts reached in the last 7 days (rolling window)"
         example_values: ["50000", "75000", "30000"]
         required: false
-        filter_required: false
         aggregatable: true
-        searchable: false
         important: true
-        common_filters:
-          - "reach_week > 25000"
         used_in_metrics: ["weekly_reach_trend"]
-        notes: "Rolling 7-day window. Use to smooth out daily volatility and identify weekly trends."
+        notes: "Rolling 7-day window. Use to smooth out daily volatility."
 
       reach_days_28:
         name: "reach_days_28"
@@ -732,14 +618,10 @@ tables:
         description: "Number of unique accounts reached in the last 28 days (rolling window)"
         example_values: ["150000", "200000", "100000"]
         required: false
-        filter_required: false
         aggregatable: true
-        searchable: false
         important: true
-        common_filters:
-          - "reach_days_28 > 100000"
         used_in_metrics: ["monthly_reach_trend"]
-        notes: "Rolling 28-day window. Use for monthly performance analysis and reporting."
+        notes: "Rolling 28-day window. Use for monthly performance analysis."
 
       follower_count:
         name: "follower_count"
@@ -747,12 +629,8 @@ tables:
         description: "Total number of followers at the end of this day"
         example_values: ["25000", "50000", "10000"]
         required: false
-        filter_required: false
         aggregatable: true
-        searchable: false
         important: true
-        common_filters:
-          - "follower_count > 10000"
         used_in_metrics: ["follower_growth", "follower_growth_rate"]
         notes: "Point-in-time snapshot. Calculate growth with LAG window function: follower_count - LAG(follower_count) OVER (ORDER BY date)"
 
@@ -760,38 +638,35 @@ tables:
         name: "online_followers"
         type: "string"
         description: "JSON string with hourly breakdown of when followers are online"
-        example_values: ["{\"0\":150,\"1\":100,\"2\":75,\"8\":500,\"12\":800,\"18\":1200}", "{\"9\":300,\"13\":600,\"20\":900}"]
+        example_values: ["{\"0\":150,\"1\":100,\"8\":500,\"12\":800,\"18\":1200}"]
         required: false
-        filter_required: false
-        aggregatable: false
-        searchable: false
         important: true
         notes: "JSON format with hour (0-23) as key and online follower count as value. Parse JSON to identify best posting times. Hour is in UTC timezone."
 
+      page_id:
+        name: "page_id"
+        type: "string"
+        description: "Facebook Page ID connected to the Instagram Business Account"
+        required: false
+        system_column: true
+
+        important: true
       business_account_id:
         name: "business_account_id"
         type: "string"
         description: "Instagram Business Account ID"
-        example_values: ["17841234567890123", "17987654321098765"]
         required: false
-        aggregatable: false
-        searchable: true
-        important: false
+        system_column: true
 
+        important: true
       user_id:
         name: "user_id"
         type: "string"
         description: "Internal user ID for data isolation (partition key)"
-        example_values: ["RxdH8RrVoNNao4dqRlHVXc3mvRh2", "AbC123XyZ456DeF789"]
         required: true
         filter_required: true
-        aggregatable: false
-        searchable: true
-        important: true
         partition_key: true
-        common_filters:
-          - "user_id = '{user_id}'"
-        notes: "ALWAYS filter by this for performance."
+        important: true
 
       year:
         name: "year"
@@ -801,6 +676,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       month:
         name: "month"
         type: "string"
@@ -809,6 +685,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       day:
         name: "day"
         type: "string"
@@ -817,6 +694,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       glue_processed_at:
         name: "glue_processed_at"
         type: "timestamp"
@@ -824,6 +702,7 @@ tables:
         required: true
         system_column: true
 
+        important: false
       source:
         name: "source"
         type: "string"
@@ -831,101 +710,100 @@ tables:
         required: true
         system_column: true
 
+        important: false
     primary_key: ["date", "user_id"]
     partition_keys: ["user_id", "year", "month", "day"]
 
     common_joins:
-      - table: "instagram_users"
-        type: "INNER JOIN"
-        on: ["user_id", "year", "month", "day"]
-        description: "Join to get account profile information alongside daily metrics"
-        example: "INNER JOIN instagram_users ON user_insights.user_id = users.user_id AND user_insights.year = users.year"
-        example_query: |
-          SELECT
-            ui.date,
-            u.username,
-            ui.follower_count,
-            ui.reach,
-            ui.reach_week,
-            ui.reach_days_28,
-            ui.follower_count - LAG(ui.follower_count) OVER (ORDER BY ui.date) as daily_follower_growth
-          FROM ps_labs_processed_catalog.instagram_user_insights ui
-          INNER JOIN ps_labs_processed_catalog.instagram_users u
-            ON ui.user_id = u.user_id
-            AND ui.year = u.year
-            AND ui.month = u.month
-            AND ui.day = u.day
-          WHERE ui.user_id = '{user_id}'
-            AND CAST(ui.date AS DATE) >= date_add('day', -30, current_date)
-          ORDER BY ui.date DESC
+    - table: "instagram_users"
+      type: "INNER JOIN"
+      on: ["user_id", "year", "month", "day"]
+      description: "Join to get account profile information alongside daily metrics"
+      example: "INNER JOIN instagram_users ON user_insights.user_id = users.user_id"
+
+    common_filters:
+    - column: "date"
+      why: "to filter by specific time period"
+    - column: "reach"
+      why: "to filter by reach threshold"
+
+    date_filter_column: ["date"]
 
     important_notes:
-      - "ALWAYS filter by user_id for performance"
-      - "One row per day per account - use 'date' column for time series analysis"
-      - "follower_count is end-of-day snapshot - use LAG function to calculate growth"
-      - "online_followers is JSON - requires parsing to extract hourly data"
-      - "reach, reach_week, reach_days_28 are rolling windows - not cumulative"
-      - "Use partition keys (year, month, day) for performance"
+    - "ALWAYS filter by user_id for performance"
+    - "One row per day per account - use 'date' column for time series analysis"
+    - "follower_count is end-of-day snapshot - use LAG function to calculate growth"
+    - "online_followers is JSON - requires parsing to extract hourly data"
+    - "reach, reach_week, reach_days_28 are rolling windows - not cumulative"
+    - "Date field is STRING type - must CAST to DATE for date functions"
 
     example_queries:
-      - description: "Calculate daily follower growth for last 30 days"
-        sql: |
-          SELECT
-            date,
-            follower_count,
-            follower_count - LAG(follower_count) OVER (ORDER BY date) as daily_growth,
-            reach,
-            reach_week
-          FROM ps_labs_processed_catalog.instagram_user_insights
-          WHERE user_id = '{user_id}'
-            AND CAST(date AS DATE) >= date_add('day', -30, current_date)
-          ORDER BY date DESC
-
-      - description: "Track weekly reach trends"
-        sql: |
-          SELECT
-            date,
-            reach as daily_reach,
-            reach_week as weekly_reach,
-            reach_days_28 as monthly_reach,
-            follower_count
-          FROM ps_labs_processed_catalog.instagram_user_insights
-          WHERE user_id = '{user_id}'
-            AND year = '2024'
-            AND month = '01'
-          ORDER BY date DESC
+    - description: "Calculate daily follower growth for last 30 days"
+      sql: |
+        SELECT
+          date,
+          follower_count,
+          follower_count - LAG(follower_count) OVER (ORDER BY date) as daily_growth,
+          reach,
+          reach_week
+        FROM ps_labs_processed_catalog.instagram_user_insights
+        WHERE user_id = '{user_id}'
+          AND CAST(date AS DATE) >= date_add('day', -30, current_date)
+        ORDER BY date DESC
 
 
   instagram_user_lifetime_insights:
     stream_type: "instagram"
     stream_name: "user_lifetime_insights"
-    description: "Lifetime account metrics with demographic breakdowns including audience age, gender, country, and city distribution. Updated periodically via Airbyte. Use for understanding audience composition and demographics."
+    description: "Lifetime account metrics with demographic breakdowns including audience age, gender, country, and city distribution. Updated periodically via Airbyte as full refresh. Use for understanding audience composition and demographics. Data is structured with metric/breakdown/value pattern."
+    refresh_type: "full_refresh"
     category: "social_media"
+    subcategory: "demographics"
+    priority: "secondary"
+    granularity: "account_lifetime"
+    typical_use_cases_keywords: ["demographics", "audience", "age", "gender", "country", "city", "follower demographics", "audience breakdown", "geographic distribution", "audience composition"]
+
+    hierarchy:
+      level: "account_demographics"
+      parent:
+      children:
+      join_pattern:
+
     use_cases:
-      - "Analyze follower demographics by age range and gender"
-      - "Understand geographic distribution of audience (country and city)"
-      - "Track audience composition changes over time"
-      - "Segment content strategy based on primary audience demographics"
-      - "Export demographic data for reporting and analysis"
+    - "Analyze follower demographics by age range and gender"
+    - "Understand geographic distribution of audience (country and city)"
+    - "Track audience composition changes over time"
+    - "Segment content strategy based on primary audience demographics"
+    - "Export demographic data for reporting and analysis"
+    - "Identify top countries and cities for targeted content"
 
     columns:
       metric:
         name: "metric"
         type: "string"
         description: "Name of the demographic or audience metric"
-        example_values: ["audience_country", "audience_city", "audience_gender_age", "follower_demographics"]
-        distinct_values: ["audience_country", "audience_city", "audience_gender_age", "audience_locale", "follower_demographics"]
+        example_values: ["audience_country", "audience_city", "audience_gender_age"]
+        distinct_values: ["audience_country", "audience_city", "audience_gender_age", "audience_locale"]
         primary_key: true
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: true
         important: true
         common_filters:
-          - "metric = 'audience_country'"
-          - "metric = 'audience_gender_age'"
-          - "metric IN ('audience_country', 'audience_city')"
+        - "metric = 'audience_country'"
+        - "metric = 'audience_gender_age'"
         notes: "Each metric type represents different demographic dimension. Filter by specific metric to analyze that dimension."
+
+      breakdown:
+        name: "breakdown"
+        type: "string"
+        description: "Demographic segment identifier (e.g., 'US', 'M.25-34', 'New York')"
+        example_values: ["US", "M.25-34", "F.18-24", "New York"]
+        required: false
+        important: true
+        common_filters:
+        - "breakdown LIKE 'US'"
+        - "breakdown LIKE 'M.%'"
+        - "breakdown LIKE 'F.%'"
+        notes: "Format varies by metric type. Gender-age: 'M.25-34', 'F.18-24'. Country: 'US', 'GB'. City: 'New York'."
 
       value:
         name: "value"
@@ -933,62 +811,33 @@ tables:
         description: "Numeric value or count for the metric (stored as string, convert to int for calculations)"
         example_values: ["1500", "2500", "500"]
         required: false
-        filter_required: false
-        aggregatable: false
-        searchable: false
         important: true
         notes: "Stored as string - cast to INT or BIGINT for calculations. Represents count of followers matching the breakdown criteria."
-
-      breakdown:
-        name: "breakdown"
-        type: "string"
-        description: "Demographic segment identifier (e.g., 'US', 'M.25-34', 'New York')"
-        example_values: ["US", "M.25-34", "F.18-24", "New York", "en_US"]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: true
-        common_filters:
-          - "breakdown LIKE 'US'"
-          - "breakdown LIKE 'M.%'"
-          - "breakdown LIKE 'F.%'"
-        notes: "Format varies by metric type. Gender-age: 'M.25-34', 'F.18-24'. Country: 'US', 'GB', 'CA'. City: 'New York', 'Los Angeles'. Parse accordingly."
 
       page_id:
         name: "page_id"
         type: "string"
-        description: "Facebook Page ID connected to Instagram Business Account"
-        example_values: ["123456789012345", "987654321098765"]
+        description: "Facebook Page ID"
         required: false
-        aggregatable: false
-        searchable: true
-        important: false
+        system_column: true
 
+        important: true
       business_account_id:
         name: "business_account_id"
         type: "string"
         description: "Instagram Business Account ID"
-        example_values: ["17841234567890123", "17987654321098765"]
         required: false
-        aggregatable: false
-        searchable: true
-        important: false
+        system_column: true
 
+        important: true
       user_id:
         name: "user_id"
         type: "string"
         description: "Internal user ID for data isolation (partition key)"
-        example_values: ["RxdH8RrVoNNao4dqRlHVXc3mvRh2", "AbC123XyZ456DeF789"]
         required: true
         filter_required: true
-        aggregatable: false
-        searchable: true
-        important: true
         partition_key: true
-        common_filters:
-          - "user_id = '{user_id}'"
-        notes: "ALWAYS filter by this."
+        important: true
 
       year:
         name: "year"
@@ -998,6 +847,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       month:
         name: "month"
         type: "string"
@@ -1006,6 +856,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       day:
         name: "day"
         type: "string"
@@ -1014,6 +865,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       glue_processed_at:
         name: "glue_processed_at"
         type: "timestamp"
@@ -1021,6 +873,7 @@ tables:
         required: true
         system_column: true
 
+        important: false
       source:
         name: "source"
         type: "string"
@@ -1028,240 +881,181 @@ tables:
         required: true
         system_column: true
 
+        important: false
     primary_key: ["metric", "breakdown", "user_id"]
     partition_keys: ["user_id", "year", "month", "day"]
 
     common_joins:
-      - table: "instagram_user_insights"
-        type: "LEFT JOIN"
-        on: ["user_id", "year", "month", "day"]
-        description: "Join to correlate demographic data with daily reach and follower metrics"
-        example: "LEFT JOIN instagram_user_insights ON lifetime.user_id = insights.user_id"
-        example_query: |
-          SELECT
-            lt.metric,
-            lt.breakdown,
-            CAST(lt.value AS BIGINT) as follower_count,
-            ui.follower_count as total_followers,
-            CAST(lt.value AS DOUBLE) * 100.0 / NULLIF(ui.follower_count, 0) as percentage
-          FROM ps_labs_processed_catalog.instagram_user_lifetime_insights lt
-          LEFT JOIN ps_labs_processed_catalog.instagram_user_insights ui
-            ON lt.user_id = ui.user_id
-            AND lt.year = ui.year
-            AND lt.month = ui.month
-            AND lt.day = ui.day
-          WHERE lt.user_id = '{user_id}'
-            AND lt.metric = 'audience_country'
-            AND lt.year = '2024'
-          ORDER BY CAST(lt.value AS BIGINT) DESC
-          LIMIT 10
+    - table: "instagram_user_insights"
+      type: "LEFT JOIN"
+      on: ["user_id", "year", "month", "day"]
+      description: "Join to correlate demographic data with daily reach and follower metrics"
+      example: "LEFT JOIN instagram_user_insights ON lifetime.user_id = insights.user_id"
+
+    common_filters:
+    - column: "metric"
+      why: "to filter by specific demographic dimension"
+    - column: "breakdown"
+      why: "to filter by specific demographic segment"
+
+    date_filter_column:
 
     important_notes:
-      - "ALWAYS filter by user_id for performance"
-      - "value column is STRING - must CAST to INT or BIGINT for numeric operations"
-      - "breakdown format varies by metric type - parse accordingly"
-      - "Gender-age format: 'M.25-34' (Male, 25-34 years), 'F.18-24' (Female, 18-24 years)"
-      - "Use LIKE patterns to filter by gender: breakdown LIKE 'M.%' for males, 'F.%' for females"
-      - "Multiple rows per metric type - each row represents a different demographic segment"
+    - "ALWAYS filter by user_id for performance"
+    - "value column is STRING - must CAST to INT or BIGINT for numeric operations"
+    - "breakdown format varies by metric type - parse accordingly"
+    - "Gender-age format: 'M.25-34' (Male, 25-34 years), 'F.18-24' (Female, 18-24 years)"
+    - "Use LIKE patterns to filter by gender: breakdown LIKE 'M.%' for males"
+    - "Multiple rows per metric type - each row represents a different demographic segment"
+    - "This is FULL REFRESH table - get latest snapshot from most recent partition"
 
     example_queries:
-      - description: "Get top 10 countries by follower count"
-        sql: |
-          SELECT
-            breakdown as country,
-            CAST(value AS BIGINT) as follower_count
-          FROM ps_labs_processed_catalog.instagram_user_lifetime_insights
-          WHERE user_id = '{user_id}'
-            AND metric = 'audience_country'
-            AND year = '2024'
-          ORDER BY CAST(value AS BIGINT) DESC
-          LIMIT 10
-
-      - description: "Analyze audience by age and gender"
-        sql: |
-          SELECT
-            CASE
-              WHEN breakdown LIKE 'M.%' THEN 'Male'
-              WHEN breakdown LIKE 'F.%' THEN 'Female'
-              ELSE 'Unknown'
-            END as gender,
-            SUBSTRING(breakdown, 3) as age_range,
-            CAST(value AS BIGINT) as follower_count
-          FROM ps_labs_processed_catalog.instagram_user_lifetime_insights
-          WHERE user_id = '{user_id}'
-            AND metric = 'audience_gender_age'
-            AND year = '2024'
-          ORDER BY CAST(value AS BIGINT) DESC
+    - description: "Get top 10 countries by follower count"
+      sql: |
+        SELECT
+          breakdown as country,
+          CAST(value AS BIGINT) as follower_count
+        FROM ps_labs_processed_catalog.instagram_user_lifetime_insights
+        WHERE user_id = '{user_id}'
+          AND metric = 'audience_country'
+          AND year = '2024'
+        ORDER BY CAST(value AS BIGINT) DESC
+        LIMIT 10
 
 
   instagram_users:
     stream_type: "instagram"
     stream_name: "users"
-    description: "Instagram Business Account profile information including username, biography, follower counts, and media count. Updated when profile changes are detected via Airbyte. Use for current account state and profile metadata."
+    description: "Instagram Business Account profile information including username, biography, follower counts, and media count. Updated when profile changes are detected via Airbyte as full refresh. Use for current account state and profile metadata. Contains basic account information and stats."
+    refresh_type: "full_refresh"
     category: "social_media"
+    subcategory: "profile"
+    priority: "supplementary"
+    granularity: "account"
+    typical_use_cases_keywords: ["username", "profile", "biography", "followers", "following", "media count", "account info", "profile picture", "website", "account stats"]
+
+    hierarchy:
+      level: "account_profile"
+      parent:
+      children:
+      join_pattern:
+
     use_cases:
-      - "Get current account profile information (username, bio, followers)"
-      - "Track follower and following count trends over time"
-      - "Monitor media count growth"
-      - "Join with media or insights tables to enrich data with account context"
-      - "Export profile information for reporting"
+    - "Get current account profile information (username, bio, followers)"
+    - "Track follower and following count trends over time"
+    - "Monitor media count growth"
+    - "Join with media or insights tables to enrich data with account context"
+    - "Export profile information for reporting"
+    - "Calculate follower/following ratio"
 
     columns:
       id:
         name: "id"
         type: "string"
         description: "Instagram Business Account ID (Instagram's internal ID)"
-        example_values: ["17841234567890123", "17987654321098765"]
+        example_values: ["17841234567890123"]
         primary_key: true
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: true
         important: true
         notes: "This is Instagram's internal account ID, different from user_id partition key."
-
-      name:
-        name: "name"
-        type: "string"
-        description: "Account display name (can be different from username)"
-        example_values: ["PhotoSphere Labs", "Brand Name Inc", "Influencer Display Name"]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: false
-        notes: "Display name shown on profile - can contain spaces and special characters."
 
       username:
         name: "username"
         type: "string"
         description: "Instagram handle/username (without @ symbol)"
-        example_values: ["photosphere_official", "brandname", "influencer123"]
+        example_values: ["photosphere_official", "brandname"]
         required: true
-        filter_required: false
-        aggregatable: false
-        searchable: true
         important: true
-        common_filters:
-          - "username = 'photosphere_official'"
+        searchable: true
         notes: "Unique Instagram handle. Use for joins with instagram_media on username column."
 
-      ig_id:
-        name: "ig_id"
-        type: "bigint"
-        description: "Instagram ID (numeric format)"
-        example_values: ["123456789012345", "987654321098765"]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: false
-        notes: "Alternative Instagram ID format (numeric). Less commonly used than id field."
-
-      page_id:
-        name: "page_id"
+      name:
+        name: "name"
         type: "string"
-        description: "Facebook Page ID connected to this Instagram Business Account"
-        example_values: ["123456789012345", "987654321098765"]
+        description: "Account display name (can be different from username)"
+        example_values: ["PhotoSphere Labs", "Brand Name Inc"]
         required: false
-        aggregatable: false
         searchable: true
-        important: false
-        notes: "Links Instagram to Facebook Business Manager."
 
-      website:
-        name: "website"
-        type: "string"
-        description: "Website URL from Instagram bio"
-        example_values: ["https://www.photospherelabs.com", "https://linktr.ee/brandname", ""]
-        required: false
-        filter_required: false
-        aggregatable: false
-        searchable: true
-        important: false
-        notes: "May be empty if no website set in bio."
-
+        important: true
       biography:
         name: "biography"
         type: "string"
         description: "Instagram bio text"
-        example_values: ["Digital marketing agency 🚀 | Helping brands grow 📈", "Official account for @brandname", ""]
+        example_values: ["Digital marketing agency 🚀"]
         required: false
-        filter_required: false
-        aggregatable: false
         searchable: true
-        important: false
-        notes: "May contain emojis, hashtags, and @mentions. Can be empty."
+        notes: "May contain emojis, hashtags, and @mentions."
 
-      media_count:
-        name: "media_count"
-        type: "int"
-        description: "Total number of media posts on the account"
-        example_values: ["500", "1200", "50"]
-        required: false
-        filter_required: false
-        aggregatable: true
-        searchable: false
         important: true
-        common_filters:
-          - "media_count > 100"
-        used_in_metrics: ["content_growth", "posting_frequency"]
-        notes: "Total posts published. Compare over time to track content creation pace."
+      website:
+        name: "website"
+        type: "string"
+        description: "Website URL from Instagram bio"
+        example_values: ["https://www.photospherelabs.com"]
+        required: false
+
+        important: true
+      followers_count:
+        name: "followers_count"
+        type: "int"
+        description: "Total number of followers"
+        example_values: ["25000", "50000"]
+        required: false
+        aggregatable: true
+        important: true
+        used_in_metrics: ["follower_growth", "follower_following_ratio"]
+        notes: "Point-in-time snapshot. For growth trends, use instagram_user_insights."
 
       follows_count:
         name: "follows_count"
         type: "int"
         description: "Number of accounts this account follows"
-        example_values: ["250", "1000", "100"]
+        example_values: ["250", "1000"]
         required: false
-        filter_required: false
         aggregatable: true
-        searchable: false
-        important: false
-        common_filters:
-          - "follows_count < 500"
-        notes: "Outbound follows. Use for follower/following ratio analysis."
 
-      followers_count:
-        name: "followers_count"
-        type: "int"
-        description: "Total number of followers"
-        example_values: ["25000", "50000", "10000"]
-        required: false
-        filter_required: false
-        aggregatable: true
-        searchable: false
         important: true
-        common_filters:
-          - "followers_count > 10000"
-        used_in_metrics: ["follower_growth", "follower_following_ratio"]
-        notes: "Point-in-time snapshot. For growth trends, compare across dates or use instagram_user_insights."
+      media_count:
+        name: "media_count"
+        type: "int"
+        description: "Total number of media posts on the account"
+        example_values: ["500", "1200"]
+        required: false
+        aggregatable: true
+        important: true
+        used_in_metrics: ["content_growth"]
 
+      ig_id:
+        name: "ig_id"
+        type: "bigint"
+        description: "Instagram ID (numeric format)"
+        required: false
+
+        important: true
+      page_id:
+        name: "page_id"
+        type: "string"
+        description: "Facebook Page ID"
+        required: false
+        system_column: true
+
+        important: true
       profile_picture_url:
         name: "profile_picture_url"
         type: "string"
         description: "URL to account profile picture"
-        example_values: ["https://scontent.cdninstagram.com/v/t51.2885-19/123456789_123.jpg"]
         required: false
-        aggregatable: false
-        searchable: false
-        important: false
-        notes: "URLs may expire. Use for display purposes only."
 
+        important: true
       user_id:
         name: "user_id"
         type: "string"
         description: "Internal user ID for data isolation (partition key)"
-        example_values: ["RxdH8RrVoNNao4dqRlHVXc3mvRh2", "AbC123XyZ456DeF789"]
         required: true
         filter_required: true
-        aggregatable: false
-        searchable: true
-        important: true
         partition_key: true
-        common_filters:
-          - "user_id = '{user_id}'"
-        notes: "ALWAYS filter by this. Different from Instagram's id field."
+        important: true
 
       year:
         name: "year"
@@ -1271,6 +1065,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       month:
         name: "month"
         type: "string"
@@ -1279,6 +1074,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       day:
         name: "day"
         type: "string"
@@ -1287,6 +1083,7 @@ tables:
         partition_key: true
         system_column: true
 
+        important: false
       glue_processed_at:
         name: "glue_processed_at"
         type: "timestamp"
@@ -1294,6 +1091,7 @@ tables:
         required: true
         system_column: true
 
+        important: false
       source:
         name: "source"
         type: "string"
@@ -1301,87 +1099,2971 @@ tables:
         required: true
         system_column: true
 
+        important: false
     primary_key: ["id"]
     partition_keys: ["user_id", "year", "month", "day"]
 
     common_joins:
-      - table: "instagram_media"
-        type: "INNER JOIN"
-        on: ["username", "user_id"]
-        description: "Join to get all posts for this account"
-        example: "INNER JOIN instagram_media ON users.username = media.username AND users.user_id = media.user_id"
-        example_query: |
-          SELECT
-            u.username,
-            u.followers_count,
-            u.media_count as total_media,
-            COUNT(m.id) as posts_in_period,
-            AVG(CASE WHEN m.media_type = 'REELS' THEN 1.0 ELSE 0.0 END) * 100 as reels_percentage
-          FROM ps_labs_processed_catalog.instagram_users u
-          INNER JOIN ps_labs_processed_catalog.instagram_media m
-            ON u.username = m.username
-            AND u.user_id = m.user_id
-          WHERE u.user_id = '{user_id}'
-            AND m.year = '2024'
-          GROUP BY u.username, u.followers_count, u.media_count
+    - table: "instagram_media"
+      type: "INNER JOIN"
+      on: ["username", "user_id"]
+      description: "Join to get all posts for this account"
+      example: "INNER JOIN instagram_media ON users.username = media.username AND users.user_id = media.user_id"
 
-      - table: "instagram_user_insights"
-        type: "INNER JOIN"
-        on: ["user_id", "year", "month", "day"]
-        description: "Join to get daily performance metrics alongside profile information"
-        example: "INNER JOIN instagram_user_insights ON users.user_id = insights.user_id"
-        example_query: |
-          SELECT
-            u.username,
-            u.name,
-            u.biography,
-            ui.date,
-            ui.follower_count as daily_followers,
-            ui.reach as daily_reach,
-            u.followers_count as profile_followers
-          FROM ps_labs_processed_catalog.instagram_users u
-          INNER JOIN ps_labs_processed_catalog.instagram_user_insights ui
-            ON u.user_id = ui.user_id
-            AND u.year = ui.year
-            AND u.month = ui.month
-            AND u.day = ui.day
-          WHERE u.user_id = '{user_id}'
-            AND CAST(ui.date AS DATE) >= date_add('day', -7, current_date)
-          ORDER BY ui.date DESC
+    - table: "instagram_user_insights"
+      type: "INNER JOIN"
+      on: ["user_id", "year", "month", "day"]
+      description: "Join to get daily performance metrics alongside profile information"
+      example: "INNER JOIN instagram_user_insights ON users.user_id = insights.user_id"
+
+    common_filters:
+    - column: "username"
+      why: "to filter by specific account"
+
+    date_filter_column:
 
     important_notes:
-      - "ALWAYS filter by user_id for performance"
-      - "Don't confuse 'id' (Instagram's account ID) with 'user_id' (PhotoSphere partition key)"
-      - "followers_count is point-in-time - use instagram_user_insights for historical trends"
-      - "Use username for joins with instagram_media"
-      - "To get latest profile, use: ORDER BY year DESC, month DESC, day DESC LIMIT 1"
+    - "ALWAYS filter by user_id for performance"
+    - "Don't confuse 'id' (Instagram's account ID) with 'user_id' (PhotoSphere partition key)"
+    - "followers_count is point-in-time - use instagram_user_insights for historical trends"
+    - "Use username for joins with instagram_media"
+    - "To get latest profile, use: ORDER BY year DESC, month DESC, day DESC LIMIT 1"
+    - "This is FULL REFRESH table - get latest snapshot from most recent partition"
 
     example_queries:
-      - description: "Get latest profile information"
-        sql: |
-          SELECT
-            id,
-            username,
-            name,
-            biography,
-            followers_count,
-            follows_count,
-            media_count,
-            website
-          FROM ps_labs_processed_catalog.instagram_users
-          WHERE user_id = '{user_id}'
-          ORDER BY year DESC, month DESC, day DESC
-          LIMIT 1
+    - description: "Get latest profile information"
+      sql: |
+        SELECT
+          id,
+          username,
+          name,
+          biography,
+          followers_count,
+          follows_count,
+          media_count,
+          website
+        FROM ps_labs_processed_catalog.instagram_users
+        WHERE user_id = '{user_id}'
+        ORDER BY year DESC, month DESC, day DESC
+        LIMIT 1
 
-      - description: "Calculate follower/following ratio"
-        sql: |
-          SELECT
-            username,
-            followers_count,
-            follows_count,
-            CAST(followers_count AS DOUBLE) / NULLIF(follows_count, 0) as follower_ratio,
-            media_count
-          FROM ps_labs_processed_catalog.instagram_users
-          WHERE user_id = '{user_id}'
-          ORDER BY year DESC, month DESC, day DESC
-          LIMIT 1
+  # ========================================
+  # FACEBOOK ADS TABLES
+  # ========================================
+  facebook_campaigns:
+    stream_type: "facebook"
+    stream_name: "campaigns"
+    description: "Facebook/Instagram ad campaign configuration and budget information. Contains campaign-level settings including objectives, budgets, bidding strategies, and status. Updated incrementally via Airbyte when campaigns are created or modified. This is the TOP level of the Facebook ads hierarchy (campaign → adset → ad). For performance metrics, join with facebook_ads_insights."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "campaigns"
+    priority: "primary"
+    granularity: "campaign"
+    typical_use_cases_keywords: ["campaigns", "campaign performance", "campaign budget", "campaign spend", "campaign objective", "facebook campaigns", "meta campaigns", "campaign strategy", "buying type", "bid strategy", "campaign status", "campaign hierarchy"]
+    hierarchy:
+      level: "campaign"
+      parent:
+      children: ["facebook_ad_sets", "facebook_ads", "facebook_ads_insights"]
+      join_pattern: "facebook_ad_sets.campaign_id = facebook_campaigns.id AND facebook_ad_sets.user_id = facebook_campaigns.user_id"
+    use_cases:
+    - "What campaigns am I currently running?"
+    - "Which campaigns have the highest budget allocation?"
+    - "Show me all campaigns with a specific objective (e.g., CONVERSIONS, LINK_CLICKS)"
+    - "What is my total campaign spend cap across all campaigns?"
+    - "Compare campaign configurations and strategies"
+    - "Identify campaigns that need budget adjustments"
+    columns:
+      id:
+        name: "id"
+        type: "string"
+        description: "Unique Facebook campaign ID"
+        example_values: ["23851234567890123", "23851234567890124"]
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+        notes: "Use for joins with facebook_ad_sets and facebook_ads_insights on campaign_id column"
+      name:
+        name: "name"
+        type: "string"
+        description: "Campaign name set by advertiser"
+        example_values: ["Holiday Sale 2024", "Brand Awareness Q4", "Product Launch Campaign"]
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+        notes: "User-defined names, use for reporting and identification"
+      account_id:
+        name: "account_id"
+        type: "string"
+        description: "Facebook Ad Account ID (format: act_123456789)"
+        example_values: ["act_123456789", "act_987654321"]
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+        notes: "Links campaigns to Facebook Ad Account"
+      status:
+        name: "status"
+        type: "string"
+        description: "Campaign status set by advertiser"
+        example_values: ["ACTIVE", "PAUSED", "DELETED", "ARCHIVED"]
+        distinct_values: ["ACTIVE", "PAUSED", "DELETED", "ARCHIVED"]
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        common_filters:
+        - "status = 'ACTIVE'"
+        - "status IN ('ACTIVE', 'PAUSED')"
+        notes: "Filter by ACTIVE to see only running campaigns"
+      effective_status:
+        name: "effective_status"
+        type: "string"
+        description: "Actual campaign delivery status (considers parent statuses and scheduling)"
+        example_values: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "PENDING_REVIEW"]
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        notes: "More accurate than 'status' - reflects actual delivery state"
+      objective:
+        name: "objective"
+        type: "string"
+        description: "Campaign marketing objective"
+        example_values: ["OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS", "OUTCOME_SALES"]
+        distinct_values: ["OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS", "OUTCOME_SALES", "OUTCOME_AWARENESS", "OUTCOME_APP_PROMOTION"]
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        common_filters:
+        - "objective = 'OUTCOME_SALES'"
+        - "objective IN ('OUTCOME_TRAFFIC', 'OUTCOME_ENGAGEMENT')"
+        notes: "Determines optimization goal and available metrics"
+      buying_type:
+        name: "buying_type"
+        type: "string"
+        description: "How ads are bought (auction vs reserved)"
+        example_values: ["AUCTION", "RESERVED"]
+        distinct_values: ["AUCTION", "RESERVED"]
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: false
+        notes: "Most campaigns use AUCTION buying type"
+      bid_strategy:
+        name: "bid_strategy"
+        type: "string"
+        description: "Bidding strategy for campaign optimization"
+        example_values: ["LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP", "COST_CAP"]
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        notes: "Affects how Facebook optimizes ad delivery and costs"
+      daily_budget:
+        name: "daily_budget"
+        type: "double"
+        description: "Daily budget in account currency (cents)"
+        example_values: ["5000", "10000", "25000"]
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+        common_filters:
+        - "daily_budget > 10000"
+        notes: "In cents (e.g., 5000 = $50.00). NULL if using lifetime_budget"
+      lifetime_budget:
+        name: "lifetime_budget"
+        type: "double"
+        description: "Total lifetime budget in account currency (cents)"
+        example_values: ["100000", "500000"]
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+        notes: "In cents. NULL if using daily_budget. One of daily_budget or lifetime_budget will be set"
+      spend_cap:
+        name: "spend_cap"
+        type: "double"
+        description: "Maximum total amount to spend on campaign (cents)"
+        example_values: ["1000000", "5000000"]
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+        notes: "Hard cap on total campaign spend. In cents."
+      budget_remaining:
+        name: "budget_remaining"
+        type: "double"
+        description: "Remaining budget available for campaign (cents)"
+        example_values: ["50000", "250000"]
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+        notes: "Real-time remaining budget. In cents."
+      created_time:
+        name: "created_time"
+        type: "timestamp"
+        description: "When campaign was created (UTC timezone)"
+        example_values: ["2024-01-15 10:30:00", "2024-06-20 14:15:30"]
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: false
+        notes: "Useful for campaign age analysis"
+      updated_time:
+        name: "updated_time"
+        type: "timestamp"
+        description: "When campaign was last modified (UTC timezone) - CURSOR FIELD"
+        example_values: ["2024-12-25 09:45:00", "2024-10-15 16:20:00"]
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        notes: "CURSOR FIELD for incremental sync. Used for partitioning (year/month/day)"
+      start_time:
+        name: "start_time"
+        type: "timestamp"
+        description: "Scheduled campaign start time (UTC timezone)"
+        example_values: ["2024-01-01 00:00:00", "2024-06-15 08:00:00"]
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        notes: "Campaign won't deliver before this time"
+      stop_time:
+        name: "stop_time"
+        type: "timestamp"
+        description: "Scheduled campaign stop time (UTC timezone)"
+        example_values: ["2024-12-31 23:59:59", "2024-07-31 23:59:00"]
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+        notes: "Campaign stops delivering after this time"
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID for data isolation (partition key)"
+        example_values: ["RxdH8RrVoNNao4dqRlHVXc3mvRh2"]
+        required: true
+        filter_required: true
+        aggregatable: false
+        searchable: true
+        important: true
+        partition_key: true
+        common_filters:
+        - "user_id = '{user_id}'"
+        notes: "ALWAYS filter by this for performance and data isolation"
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition column: year from updated_time (YYYY format)"
+        example_values: ["2024", "2023"]
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition column: month from updated_time (1-12)"
+        example_values: ["1", "6", "12"]
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition column: day from updated_time (1-31)"
+        example_values: ["1", "15", "31"]
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "When this record was processed by Glue ETL"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source (always 'airbyte')"
+        example_values: ["airbyte"]
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    common_joins:
+    - table: "facebook_ad_sets"
+      type: "LEFT JOIN"
+      on: ["id"]
+      description: "Join to get all ad sets in this campaign"
+      example: "LEFT JOIN facebook_ad_sets ON campaigns.id = adsets.campaign_id AND campaigns.user_id = adsets.user_id"
+    - table: "facebook_ads_insights"
+      type: "LEFT JOIN"
+      on: ["id"]
+      description: "Join to get aggregated campaign performance metrics"
+      example: "LEFT JOIN facebook_ads_insights ON campaigns.id = insights.campaign_id AND campaigns.user_id = insights.user_id"
+    common_filters:
+    - column: "status"
+      why: "to analyze only active or specific status campaigns"
+    - column: "objective"
+      why: "to compare campaigns by marketing objective"
+    date_filter_column: ["updated_time", "start_time", "stop_time"]
+    important_notes:
+    - "ALWAYS filter by user_id for data isolation and performance"
+    - "This is INCREMENTAL table - partitioned by updated_time cursor field"
+    - "Budget fields are in CENTS - divide by 100 for dollar amounts"
+    - "Either daily_budget OR lifetime_budget will be set, not both"
+    - "Use effective_status instead of status for accurate delivery state"
+    - "This is the TOP of the hierarchy: campaign → adset → ad → insights"
+    example_queries:
+    - description: "Get all active campaigns with their budgets"
+      sql: |
+        SELECT
+          id,
+          name,
+          objective,
+          status,
+          effective_status,
+          daily_budget / 100.0 as daily_budget_usd,
+          lifetime_budget / 100.0 as lifetime_budget_usd,
+          spend_cap / 100.0 as spend_cap_usd,
+          budget_remaining / 100.0 as budget_remaining_usd
+        FROM ps_labs_processed_catalog.facebook_campaigns
+        WHERE user_id = '{user_id}'
+          AND status = 'ACTIVE'
+        ORDER BY daily_budget DESC NULLS LAST, lifetime_budget DESC NULLS LAST
+
+
+
+  facebook_ad_sets:
+    stream_type: "facebook"
+    stream_name: "ad_sets"
+    description: "Facebook/Instagram ad set configuration including targeting, budget allocation, bidding, and optimization settings. Updated incrementally via Airbyte. Ad sets sit BETWEEN campaigns and ads in the hierarchy (campaign → adset → ad). Contains targeting criteria, budget settings, and optimization goals. For performance metrics, join with facebook_ads_insights."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "adsets"
+    priority: "primary"
+    granularity: "adset"
+    typical_use_cases_keywords: ["ad sets", "adsets", "targeting", "audience targeting", "adset budget", "adset performance", "optimization goal", "bid strategy", "adset status", "facebook adsets", "meta adsets"]
+
+    hierarchy:
+      level: "adset"
+      parent: "facebook_campaigns"
+      children: ["facebook_ads", "facebook_ads_insights"]
+      join_pattern: "facebook_ads.adset_id = facebook_ad_sets.id AND facebook_ads.user_id = facebook_ad_sets.user_id"
+
+    use_cases:
+    - "What ad sets are running in my campaigns?"
+    - "Which ad sets have the best optimization settings?"
+    - "Show me all ad sets targeting a specific audience"
+    - "Compare budget allocation across ad sets"
+    - "Identify underperforming ad sets that need optimization"
+
+    columns:
+      id:
+        name: "id"
+        type: "string"
+        description: "Unique Facebook ad set ID"
+        primary_key: true
+        required: true
+        important: true
+
+      name:
+        name: "name"
+        type: "string"
+        description: "Ad set name set by advertiser"
+        required: true
+        important: true
+
+      account_id:
+        name: "account_id"
+        type: "string"
+        description: "Facebook Ad Account ID"
+        required: true
+        important: true
+
+      campaign_id:
+        name: "campaign_id"
+        type: "string"
+        description: "Parent campaign ID"
+        required: true
+        important: true
+        notes: "Use to join with facebook_campaigns table"
+
+      effective_status:
+        name: "effective_status"
+        type: "string"
+        description: "Actual ad set delivery status"
+        important: true
+
+        required: false
+      bid_strategy:
+        name: "bid_strategy"
+        type: "string"
+        description: "Bidding strategy"
+        important: true
+
+        required: false
+      daily_budget:
+        name: "daily_budget"
+        type: "double"
+        description: "Daily budget in cents"
+        aggregatable: true
+        important: true
+
+        required: false
+      lifetime_budget:
+        name: "lifetime_budget"
+        type: "string"
+        description: "Lifetime budget in cents"
+        aggregatable: true
+        important: true
+
+        required: false
+      updated_time:
+        name: "updated_time"
+        type: "timestamp"
+        description: "Last modified timestamp - CURSOR FIELD"
+        required: true
+        important: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID (partition key)"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year from updated_time"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month from updated_time"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day from updated_time"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Glue processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source (airbyte)"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_joins:
+    - table: "facebook_campaigns"
+      type: "LEFT JOIN"
+      on: ["campaign_id"]
+      description: "Join to parent campaign"
+      example: "LEFT JOIN facebook_campaigns ON adsets.campaign_id = campaigns.id"
+
+    - table: "facebook_ads"
+      type: "LEFT JOIN"
+      on: ["id"]
+      description: "Join to ads in this ad set"
+      example: "LEFT JOIN facebook_ads ON adsets.id = ads.adset_id"
+
+    date_filter_column: ["updated_time"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL table - partitioned by updated_time"
+    - "Budget in CENTS - divide by 100 for dollars"
+    - "Middle of hierarchy: campaign → adset → ad"
+
+  facebook_ads:
+    stream_type: "facebook"
+    stream_name: "ads"
+    description: "Individual Facebook/Instagram ads with creative references, targeting, tracking specs, and conversion configuration. Updated incrementally via Airbyte. Ads are the BOTTOM level of the entity hierarchy (campaign → adset → ad). Each ad references a creative via the 'creative' field. For performance metrics, join with facebook_ads_insights."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "ads"
+    priority: "primary"
+    granularity: "ad"
+    typical_use_cases_keywords: ["ads", "individual ads", "ad creative", "ad performance", "ad status", "facebook ads", "meta ads", "ad tracking", "conversions", "ad delivery"]
+
+    hierarchy:
+      level: "ad"
+      parent: "facebook_ad_sets"
+      children: ["facebook_ads_insights"]
+      join_pattern: "facebook_ads_insights.ad_id = facebook_ads.id"
+
+    use_cases:
+    - "What ads are currently running?"
+    - "Which ads use which creatives?"
+    - "Show me all ads in a specific campaign or ad set"
+    - "Identify ads with specific tracking or conversion specs"
+
+    columns:
+      id:
+        name: "id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+
+      name:
+        name: "name"
+        type: "string"
+        description: "Ad name"
+        required: true
+        important: true
+
+      account_id:
+        name: "account_id"
+        type: "string"
+        description: "Ad Account ID"
+        required: true
+        important: true
+
+      campaign_id:
+        name: "campaign_id"
+        type: "string"
+        description: "Parent campaign ID"
+        required: true
+        important: true
+
+      adset_id:
+        name: "adset_id"
+        type: "string"
+        description: "Parent ad set ID"
+        required: true
+        important: true
+
+      status:
+        name: "status"
+        type: "string"
+        description: "Ad status"
+        important: true
+
+        required: false
+      effective_status:
+        name: "effective_status"
+        type: "string"
+        description: "Actual delivery status"
+        important: true
+
+        required: false
+      updated_time:
+        name: "updated_time"
+        type: "timestamp"
+        description: "Last modified - CURSOR FIELD"
+        required: true
+        important: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID (partition key)"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_joins:
+    - table: "facebook_ad_sets"
+      type: "LEFT JOIN"
+      on: ["adset_id"]
+      description: "Join to parent ad set"
+
+    - table: "facebook_ads_insights"
+      type: "LEFT JOIN"
+      on: ["id"]
+      description: "Join to performance metrics"
+
+    date_filter_column: ["updated_time"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL table"
+    - "Bottom of hierarchy: campaign → adset → ad"
+
+  facebook_ad_creatives:
+    stream_type: "facebook"
+    stream_name: "ad_creatives"
+    description: "Facebook/Instagram ad creative assets including images, videos, copy, CTAs, and Instagram integrations. Contains flattened creative metadata. This is a FULL REFRESH table updated daily with all active creatives. Join with facebook_ads to see which ads use which creatives."
+    refresh_type: "full_refresh"
+    category: "advertising"
+    subcategory: "creatives"
+    priority: "secondary"
+    granularity: "creative"
+    typical_use_cases_keywords: ["creatives", "ad creatives", "images", "videos", "ad copy", "cta", "call to action", "creative assets", "ad content", "instagram creatives"]
+
+    use_cases:
+    - "What creatives are being used in my ads?"
+    - "Which creatives have specific CTAs or copy?"
+    - "Analyze creative performance by type (image vs video)"
+
+    columns:
+      id:
+        name: "id"
+        type: "string"
+        description: "Creative ID"
+        primary_key: true
+        required: true
+        important: true
+
+      name:
+        name: "name"
+        type: "string"
+        description: "Creative name"
+        important: true
+
+        required: false
+      body:
+        name: "body"
+        type: "string"
+        description: "Ad body text/copy"
+        important: true
+
+        required: false
+      title:
+        name: "title"
+        type: "string"
+        description: "Ad title"
+        important: true
+
+        required: false
+      status:
+        name: "status"
+        type: "string"
+        description: "Creative status"
+        important: true
+
+        required: false
+      image_url:
+        name: "image_url"
+        type: "string"
+        description: "Image URL"
+        important: false
+
+        required: false
+      video_id:
+        name: "video_id"
+        type: "string"
+        description: "Video ID if video creative"
+        important: false
+
+        required: false
+      call_to_action_type:
+        name: "call_to_action_type"
+        type: "string"
+        description: "CTA button type"
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column:
+
+    important_notes:
+    - "FULL REFRESH table - get latest from most recent partition"
+    - "ALWAYS filter by user_id"
+
+  facebook_ads_insights:
+    stream_type: "facebook"
+    stream_name: "ads_insights"
+    description: "Daily performance metrics for Facebook/Instagram ads including spend, impressions, clicks, conversions, and revenue. BASE insights table with NO breakdown dimensions. Updated incrementally with daily metrics. Contains ad-level aggregated metrics. For demographic or platform breakdowns, use the specific breakdown tables (age_and_gender, delivery_platform, etc.)."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "ad_performance"
+    priority: "primary"
+    granularity: "ad_daily"
+    typical_use_cases_keywords: ["ad performance", "spend", "impressions", "clicks", "conversions", "roas", "ctr", "cpc", "cpm", "facebook ads", "meta ads", "ad metrics", "daily performance"]
+
+    hierarchy:
+      level: "metrics"
+      parent: "facebook_ads"
+      children:
+      join_pattern: "facebook_ads.id = facebook_ads_insights.ad_id"
+
+    use_cases:
+    - "What is my total ad spend this month?"
+    - "Which ads have the highest ROAS?"
+    - "Calculate cost per acquisition by ad"
+    - "Track daily spend trends"
+    - "Compare ad performance by campaign"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Metrics date - CURSOR FIELD"
+        primary_key: true
+        required: true
+        important: true
+
+      impressions:
+        name: "impressions"
+        type: "bigint"
+        description: "Ad impressions"
+        aggregatable: true
+        important: true
+
+        required: false
+      clicks:
+        name: "clicks"
+        type: "bigint"
+        description: "Ad clicks"
+        aggregatable: true
+        important: true
+
+        required: false
+      spend:
+        name: "spend"
+        type: "double"
+        description: "Total spend in USD"
+        aggregatable: true
+        important: true
+
+        required: false
+      reach:
+        name: "reach"
+        type: "bigint"
+        description: "Unique users reached"
+        aggregatable: true
+        important: true
+
+        required: false
+      cpc:
+        name: "cpc"
+        type: "double"
+        description: "Cost per click"
+        aggregatable: false
+        important: true
+
+        required: false
+      cpm:
+        name: "cpm"
+        type: "double"
+        description: "Cost per 1000 impressions"
+        aggregatable: false
+        important: true
+
+        required: false
+      ctr:
+        name: "ctr"
+        type: "double"
+        description: "Click-through rate"
+        aggregatable: false
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year from date_start"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month from date_start"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day from date_start"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["ad_id", "date_start"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_joins:
+    - table: "facebook_ads"
+      type: "LEFT JOIN"
+      on: ["ad_id"]
+      description: "Join to get ad details"
+
+    - table: "facebook_campaigns"
+      type: "LEFT JOIN"
+      on: ["campaign_id"]
+      description: "Join to get campaign info"
+
+    common_filters:
+    - column: "spend"
+      why: "to analyze top spenders"
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date_start"
+    - "BASE table - NO breakdown dimensions"
+    - "For demographics use age_and_gender table"
+    - "For platform breakdown use delivery_platform table"
+
+  facebook_dma_insights:
+    stream_type: "facebook"
+    stream_name: "dma_insights"
+    description: "Facebook/Instagram ads performance metrics broken down by DMA (Designated Market Area) region. Contains same metrics as base insights table but with geographic DMA dimension. Updated incrementally. Use to analyze performance by geographic market/region."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "geographic_performance"
+    priority: "secondary"
+    granularity: "ad_daily_dma"
+    typical_use_cases_keywords: ["dma", "geographic performance", "regional performance", "market performance", "location performance", "dma insights"]
+
+    use_cases:
+    - "Which DMAs have the best ROAS?"
+    - "Analyze ad performance by geographic region"
+    - "Compare spend across different markets"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Metrics date"
+        primary_key: true
+        required: true
+        important: true
+
+      dma:
+        name: "dma"
+        type: "string"
+        description: "DMA region code"
+        primary_key: true
+        required: true
+        important: true
+
+      impressions:
+        name: "impressions"
+        type: "bigint"
+        description: "Impressions in this DMA"
+        aggregatable: true
+        important: true
+
+        required: false
+      spend:
+        name: "spend"
+        type: "double"
+        description: "Spend in this DMA"
+        aggregatable: true
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["ad_id", "date_start", "dma"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date_start"
+    - "Breakdown by DMA region"
+
+
+  # ========================================
+  # GOOGLE ANALYTICS TABLES
+  # ========================================
+
+  ga_website_overview:
+    stream_type: "google_analytics"
+    stream_name: "website_overview"
+    description: "Google Analytics 4 high-level website performance metrics including user behavior, session data, and engagement metrics. Updated incrementally with daily snapshots. Contains property-level aggregated metrics. NO breakdown dimensions - this is the base overview table."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "overview"
+    priority: "primary"
+    granularity: "property_daily"
+    typical_use_cases_keywords: ["website overview", "site performance", "total users", "sessions", "bounce rate", "page views", "engagement", "ga4", "google analytics"]
+
+    use_cases:
+    - "What is my total website traffic this month?"
+    - "How has bounce rate changed over time?"
+    - "Compare sessions and page views day-over-day"
+    - "Calculate average session duration trends"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date in yyyyMMdd format - CURSOR FIELD"
+        primary_key: true
+        required: true
+        important: true
+        notes: "Format: 20240115. Use for time-based filtering and partitioning."
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      newUsers:
+        name: "newUsers"
+        type: "bigint"
+        description: "Count of new users"
+        aggregatable: true
+        important: true
+
+        required: false
+      totalUsers:
+        name: "totalUsers"
+        type: "bigint"
+        description: "Total users count"
+        aggregatable: true
+        important: true
+
+        required: false
+      sessions:
+        name: "sessions"
+        type: "bigint"
+        description: "Total sessions count"
+        aggregatable: true
+        important: true
+
+        required: false
+      sessionsPerUser:
+        name: "sessionsPerUser"
+        type: "double"
+        description: "Average sessions per user"
+        aggregatable: false
+        important: true
+
+        required: false
+      screenPageViews:
+        name: "screenPageViews"
+        type: "bigint"
+        description: "Total page views"
+        aggregatable: true
+        important: true
+
+        required: false
+      screenPageViewsPerSession:
+        name: "screenPageViewsPerSession"
+        type: "double"
+        description: "Average page views per session"
+        aggregatable: false
+        important: true
+
+        required: false
+      bounceRate:
+        name: "bounceRate"
+        type: "double"
+        description: "Bounce rate (0.0 to 1.0)"
+        aggregatable: false
+        important: true
+        notes: "0.5 = 50% bounce rate"
+
+        required: false
+      averageSessionDuration:
+        name: "averageSessionDuration"
+        type: "double"
+        description: "Average session duration in seconds"
+        aggregatable: false
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year from date"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month from date"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day from date"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date cursor field"
+    - "Date format: yyyyMMdd (e.g., 20240115)"
+    - "Bounce rate is decimal (0.5 = 50%)"
+
+  ga_daily_active_users:
+    stream_type: "google_analytics"
+    stream_name: "daily_active_users"
+    description: "Google Analytics 4 daily active users metrics at property level. Updated incrementally. Contains simple daily active user counts."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "users"
+    priority: "secondary"
+    granularity: "property_daily"
+    typical_use_cases_keywords: ["daily active users", "dau", "active users", "user activity", "ga4"]
+
+    use_cases:
+    - "Track daily active users over time"
+    - "Calculate DAU trends and growth"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      active1DayUsers:
+        name: "active1DayUsers"
+        type: "bigint"
+        description: "Daily active users count"
+        aggregatable: true
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+
+  ga_pages:
+    stream_type: "google_analytics"
+    stream_name: "pages"
+    description: "Google Analytics 4 page-level performance metrics including views and bounce rates. Updated incrementally. Contains metrics broken down by page path and hostname."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "pages"
+    priority: "primary"
+    granularity: "page_daily"
+    typical_use_cases_keywords: ["pages", "page performance", "page views", "bounce rate", "url", "page path", "ga4"]
+
+    use_cases:
+    - "Which pages have the most views?"
+    - "What is the bounce rate for specific pages?"
+    - "Analyze page performance over time"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      hostName:
+        name: "hostName"
+        type: "string"
+        description: "Domain name"
+        primary_key: true
+        required: true
+        important: true
+
+      pagePathPlusQueryString:
+        name: "pagePathPlusQueryString"
+        type: "string"
+        description: "Full URL path with query string"
+        primary_key: true
+        required: true
+        important: true
+        searchable: true
+
+      screenPageViews:
+        name: "screenPageViews"
+        type: "bigint"
+        description: "Page views count"
+        aggregatable: true
+        important: true
+
+        required: false
+      bounceRate:
+        name: "bounceRate"
+        type: "double"
+        description: "Page bounce rate"
+        aggregatable: false
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id", "hostName", "pagePathPlusQueryString"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_filters:
+    - column: "pagePathPlusQueryString"
+      why: "to analyze specific pages or URL patterns"
+
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+    - "Page path is searchable for URL filtering"
+
+  ga_traffic_sources:
+    stream_type: "google_analytics"
+    stream_name: "traffic_sources"
+    description: "Google Analytics 4 traffic source attribution and performance data broken down by source and medium. Updated incrementally. Contains user acquisition, session behavior, and engagement metrics."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "attribution"
+    priority: "primary"
+    granularity: "source_medium_daily"
+    typical_use_cases_keywords: ["traffic sources", "source", "medium", "attribution", "organic", "paid", "referral", "direct", "ga4", "acquisition"]
+
+    use_cases:
+    - "Which traffic sources drive the most users?"
+    - "Compare organic vs paid traffic performance"
+    - "Analyze referral sources"
+    - "Track direct traffic trends"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      sessionSource:
+        name: "sessionSource"
+        type: "string"
+        description: "Traffic source (e.g., google, facebook, direct)"
+        primary_key: true
+        required: true
+        important: true
+        searchable: true
+
+      sessionMedium:
+        name: "sessionMedium"
+        type: "string"
+        description: "Medium (e.g., organic, cpc, referral)"
+        primary_key: true
+        required: true
+        important: true
+        searchable: true
+
+      newUsers:
+        name: "newUsers"
+        type: "bigint"
+        description: "New users from this source/medium"
+        aggregatable: true
+        important: true
+
+        required: false
+      totalUsers:
+        name: "totalUsers"
+        type: "bigint"
+        description: "Total users from this source/medium"
+        aggregatable: true
+        important: true
+
+        required: false
+      sessions:
+        name: "sessions"
+        type: "bigint"
+        description: "Sessions from this source/medium"
+        aggregatable: true
+        important: true
+
+        required: false
+      sessionsPerUser:
+        name: "sessionsPerUser"
+        type: "double"
+        description: "Avg sessions per user"
+        aggregatable: false
+        important: true
+
+        required: false
+      averageSessionDuration:
+        name: "averageSessionDuration"
+        type: "double"
+        description: "Avg session duration (seconds)"
+        aggregatable: false
+        important: true
+
+        required: false
+      screenPageViews:
+        name: "screenPageViews"
+        type: "bigint"
+        description: "Page views"
+        aggregatable: true
+        important: true
+
+        required: false
+      screenPageViewsPerSession:
+        name: "screenPageViewsPerSession"
+        type: "double"
+        description: "Avg page views per session"
+        aggregatable: false
+        important: true
+
+        required: false
+      bounceRate:
+        name: "bounceRate"
+        type: "double"
+        description: "Bounce rate"
+        aggregatable: false
+        important: true
+
+        required: false
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id", "sessionSource", "sessionMedium"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_filters:
+    - column: "sessionSource"
+      why: "to analyze specific traffic sources"
+    - column: "sessionMedium"
+      why: "to compare organic vs paid traffic"
+
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+    - "Combine source + medium for attribution analysis"
+
+  ga_item_report:
+    stream_type: "google_analytics"
+    stream_name: "item_report"
+    description: "Google Analytics 4 e-commerce item/product performance metrics. Updated incrementally. Contains sales, revenue, and product-level metrics."
+    refresh_type: "incremental"
+    category: "ecommerce"
+    subcategory: "products"
+    priority: "primary"
+    granularity: "item_daily"
+    typical_use_cases_keywords: ["items", "products", "ecommerce", "sales", "revenue", "product performance", "ga4"]
+
+    use_cases:
+    - "Which products generate the most revenue?"
+    - "Track product sales over time"
+    - "Analyze item performance"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+
+  ga_pages_path_report:
+    stream_type: "google_analytics"
+    stream_name: "pages_path_report"
+    description: "Google Analytics 4 page path performance report with detailed path-level metrics. Updated incrementally."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "pages"
+    priority: "secondary"
+    granularity: "page_path_daily"
+    typical_use_cases_keywords: ["page path", "url path", "page report", "path performance", "ga4"]
+
+    use_cases:
+    - "Analyze performance by URL path"
+    - "Track specific page paths over time"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+
+  ga_traffic_acquisition_session_medium:
+    stream_type: "google_analytics"
+    stream_name: "traffic_acquisition_session_medium"
+    description: "Google Analytics 4 traffic acquisition metrics broken down by session medium (organic, cpc, referral, etc.). Updated incrementally."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "acquisition"
+    priority: "primary"
+    granularity: "medium_daily"
+    typical_use_cases_keywords: ["session medium", "traffic medium", "acquisition", "organic", "paid", "cpc", "referral", "ga4"]
+
+    use_cases:
+    - "Compare organic vs paid traffic"
+    - "Analyze acquisition by medium"
+    - "Track medium performance over time"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      sessionMedium:
+        name: "sessionMedium"
+        type: "string"
+        description: "Session medium (organic, cpc, referral, etc.)"
+        primary_key: true
+        required: true
+        important: true
+        searchable: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id", "sessionMedium"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    common_filters:
+    - column: "sessionMedium"
+      why: "to compare organic vs paid traffic"
+
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+
+  ga_traffic_acquisition_session_source:
+    stream_type: "google_analytics"
+    stream_name: "traffic_acquisition_session_source"
+    description: "Google Analytics 4 traffic acquisition metrics broken down by session source (google, facebook, direct, etc.). Updated incrementally."
+    refresh_type: "incremental"
+    category: "traffic"
+    subcategory: "acquisition"
+    priority: "primary"
+    granularity: "source_daily"
+    typical_use_cases_keywords: ["session source", "traffic source", "acquisition", "google", "facebook", "direct", "referral source", "ga4"]
+
+    use_cases:
+    - "Which sources drive the most traffic?"
+    - "Analyze traffic by source"
+    - "Compare source performance"
+
+    columns:
+      date:
+        name: "date"
+        type: "string"
+        description: "Date yyyyMMdd - CURSOR"
+        primary_key: true
+        required: true
+        important: true
+
+      property_id:
+        name: "property_id"
+        type: "string"
+        description: "GA4 property ID"
+        required: true
+        important: true
+
+      sessionSource:
+        name: "sessionSource"
+        type: "string"
+        description: "Session source (google, facebook, direct, etc.)"
+        primary_key: true
+        required: true
+        important: true
+        searchable: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        partition_key: true
+        important: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+
+        important: false
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+
+        important: false
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+
+        important: false
+    primary_key: ["date", "property_id", "sessionSource"]
+    partition_keys: ["user_id", "year", "month", "day"]
+    common_filters:
+    - column: "sessionSource"
+      why: "to analyze specific traffic sources"
+
+    date_filter_column: ["date"]
+
+    important_notes:
+    - "ALWAYS filter by user_id"
+    - "INCREMENTAL - partitioned by date"
+
+
+  # ========================================
+  # FACEBOOK ADS INSIGHTS BREAKDOWN TABLES
+  # ========================================
+
+  facebook_ads_insights_age_and_gender:
+    stream_type: "facebook"
+    stream_name: "ads_insights_age_and_gender"
+    description: "Facebook/Instagram ads performance metrics broken down by age group and gender demographics. Updated daily via Airbyte ingestion. Contains the same metrics as facebook_ads_insights but segmented by demographic attributes. Use for demographic targeting analysis and audience insights."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "demographics"
+    priority: "secondary"
+    granularity: "ad_age_gender_daily"
+    typical_use_cases_keywords: ["demographics", "age", "gender", "audience", "targeting", "age groups", "male", "female", "demographic performance"]
+
+    use_cases:
+      - "Which age groups have the highest ROAS?"
+      - "Compare ad performance by gender"
+      - "Analyze spend distribution across demographics"
+      - "Identify best performing age/gender combinations"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Date of metrics snapshot (YYYY-MM-DD)"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+
+      age:
+        name: "age"
+        type: "string"
+        description: "Age range (e.g., '18-24', '25-34', '35-44', '45-54', '55-64', '65+')"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+
+      gender:
+        name: "gender"
+        type: "string"
+        description: "Gender ('male', 'female', 'unknown')"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+
+      impressions:
+        name: "impressions"
+        type: "bigint"
+        description: "Number of ad impressions"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      clicks:
+        name: "clicks"
+        type: "bigint"
+        description: "Number of clicks"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      spend:
+        name: "spend"
+        type: "double"
+        description: "Amount spent (USD)"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      reach:
+        name: "reach"
+        type: "bigint"
+        description: "Unique users reached"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      cpc:
+        name: "cpc"
+        type: "double"
+        description: "Cost per click"
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+
+      cpm:
+        name: "cpm"
+        type: "double"
+        description: "Cost per 1000 impressions"
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+
+      ctr:
+        name: "ctr"
+        type: "double"
+        description: "Click-through rate"
+        required: false
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID (partition key)"
+        required: true
+        filter_required: true
+        aggregatable: false
+        searchable: true
+        important: true
+        partition_key: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+        important: false
+
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+        important: false
+
+    primary_key: ["ad_id", "date_start", "age", "gender"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_joins:
+      - table: "facebook_ads_insights"
+        type: "LEFT JOIN"
+        on: ["ad_id", "date_start"]
+        description: "Join with base insights for total metrics"
+        example: "LEFT JOIN facebook_ads_insights ON breakdown.ad_id = base.ad_id AND breakdown.date_start = base.date_start AND breakdown.user_id = base.user_id"
+
+    common_filters:
+      - column: "age"
+        why: "to analyze specific age groups"
+      - column: "gender"
+        why: "to compare male vs female performance"
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+      - "ALWAYS filter by user_id"
+      - "Breakdown by age and gender - multiple rows per ad per day"
+      - "Sum metrics across demographics to get ad totals"
+      - "Use for demographic targeting optimization"
+
+  facebook_ads_insights_delivery_platform_and_device_platform:
+    stream_type: "facebook"
+    stream_name: "ads_insights_delivery_platform_and_device_platform"
+    description: "Facebook/Instagram ads performance metrics broken down by delivery platform (Facebook, Instagram, Messenger, etc.) and device platform (mobile, desktop). Contains platform-specific ad metrics for cross-platform performance analysis."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "platform_performance"
+    priority: "secondary"
+    granularity: "ad_platform_device_daily"
+    typical_use_cases_keywords: ["platform", "device", "mobile", "desktop", "instagram", "facebook", "messenger", "cross-platform", "placement"]
+
+    use_cases:
+      - "Compare performance across Facebook vs Instagram"
+      - "Analyze mobile vs desktop performance"
+      - "Optimize ad delivery by platform"
+      - "Track platform-specific ROAS"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Date of metrics snapshot"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+        important: true
+
+      publisher_platform:
+        name: "publisher_platform"
+        type: "string"
+        description: "Platform where ad was shown (facebook, instagram, messenger, audience_network)"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+
+      platform_position:
+        name: "platform_position"
+        type: "string"
+        description: "Specific position on platform (feed, story, etc.)"
+        primary_key: true
+        required: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+        important: true
+
+      impressions:
+        name: "impressions"
+        type: "bigint"
+        description: "Number of impressions"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      clicks:
+        name: "clicks"
+        type: "bigint"
+        description: "Number of clicks"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      spend:
+        name: "spend"
+        type: "double"
+        description: "Amount spent (USD)"
+        required: false
+        filter_required: false
+        aggregatable: true
+        searchable: false
+        important: true
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        aggregatable: false
+        searchable: true
+        important: true
+        partition_key: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+        important: false
+
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+        important: false
+
+    primary_key: ["ad_id", "date_start", "publisher_platform", "platform_position"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_filters:
+      - column: "publisher_platform"
+        why: "to compare Facebook vs Instagram performance"
+      - column: "platform_position"
+        why: "to analyze feed vs story placement"
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+      - "ALWAYS filter by user_id"
+      - "Breakdown by platform and placement"
+      - "Use for cross-platform optimization"
+
+  facebook_ads_insights_action_type:
+    stream_type: "facebook"
+    stream_name: "ads_insights_action_type"
+    description: "Facebook/Instagram ads action metrics broken down by specific action types (link_click, post_engagement, video_view, etc.). Contains detailed conversion and engagement breakdowns for granular performance analysis."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "conversions"
+    priority: "secondary"
+    granularity: "ad_action_type_daily"
+    typical_use_cases_keywords: ["actions", "conversions", "engagement", "clicks", "video views", "post engagement", "action types"]
+
+    use_cases:
+      - "Track specific action types (link clicks, video views, etc.)"
+      - "Analyze conversion funnel by action type"
+      - "Optimize for specific engagement actions"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Date of metrics"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+
+      action_type:
+        name: "action_type"
+        type: "string"
+        description: "Type of action (link_click, post_engagement, video_view, etc.)"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      action_count:
+        name: "action_count"
+        type: "bigint"
+        description: "Number of actions of this type"
+        required: false
+        important: true
+        filter_required: false
+        aggregatable: true
+        searchable: false
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        important: true
+        aggregatable: false
+        searchable: true
+        partition_key: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+        important: false
+
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+        important: false
+
+    primary_key: ["ad_id", "date_start", "action_type"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    common_filters:
+      - column: "action_type"
+        why: "to analyze specific action types"
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+      - "ALWAYS filter by user_id"
+      - "Breakdown by action type"
+      - "Multiple rows per ad per day (one per action type)"
+
+  facebook_ads_insights_action_reaction:
+    stream_type: "facebook"
+    stream_name: "ads_insights_action_reaction"
+    description: "Facebook/Instagram ads reaction metrics broken down by reaction type (like, love, wow, haha, sad, angry). Contains emotional engagement breakdowns for sentiment analysis."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "engagement"
+    priority: "supplementary"
+    granularity: "ad_reaction_daily"
+    typical_use_cases_keywords: ["reactions", "engagement", "like", "love", "wow", "haha", "emotional", "sentiment"]
+
+    use_cases:
+      - "Analyze emotional response to ads"
+      - "Compare reaction types across campaigns"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Date of metrics"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+
+      action_reaction:
+        name: "action_reaction"
+        type: "string"
+        description: "Reaction type (like, love, wow, haha, sad, angry)"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      reaction_count:
+        name: "reaction_count"
+        type: "bigint"
+        description: "Number of this reaction type"
+        required: false
+        important: true
+        filter_required: false
+        aggregatable: true
+        searchable: false
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        important: true
+        aggregatable: false
+        searchable: true
+        partition_key: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+        important: false
+
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+        important: false
+
+    primary_key: ["ad_id", "date_start", "action_reaction"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+      - "ALWAYS filter by user_id"
+      - "Breakdown by reaction type"
+
+  facebook_ads_insights_action_product_id:
+    stream_type: "facebook"
+    stream_name: "ads_insights_action_product_id"
+    description: "Facebook/Instagram ads action metrics broken down by product ID for dynamic product ads and catalog sales campaigns. Contains product-level performance for ecommerce optimization."
+    refresh_type: "incremental"
+    category: "ecommerce"
+    subcategory: "product_performance"
+    priority: "supplementary"
+    granularity: "ad_product_daily"
+    typical_use_cases_keywords: ["product", "ecommerce", "catalog", "dynamic ads", "product id", "shopping"]
+
+    use_cases:
+      - "Track performance by product"
+      - "Optimize dynamic product ads"
+      - "Analyze product-level ROAS"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Date of metrics"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+
+      action_product_id:
+        name: "action_product_id"
+        type: "string"
+        description: "Product ID from catalog"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      action_count:
+        name: "action_count"
+        type: "bigint"
+        description: "Number of actions for this product"
+        required: false
+        important: true
+        filter_required: false
+        aggregatable: true
+        searchable: false
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        important: true
+        aggregatable: false
+        searchable: true
+        partition_key: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+        important: false
+
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+        important: false
+
+    primary_key: ["ad_id", "date_start", "action_product_id"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+      - "ALWAYS filter by user_id"
+      - "For dynamic product ads and catalog campaigns"
+
+  facebook_ads_insights_action_conversion_device:
+    stream_type: "facebook"
+    stream_name: "ads_insights_action_conversion_device"
+    description: "Facebook/Instagram ads conversion metrics broken down by device type where conversion occurred. Contains device attribution for cross-device conversion analysis."
+    refresh_type: "incremental"
+    category: "advertising"
+    subcategory: "device_conversions"
+    priority: "supplementary"
+    granularity: "ad_device_daily"
+    typical_use_cases_keywords: ["device", "conversions", "mobile conversion", "desktop conversion", "device attribution"]
+
+    use_cases:
+      - "Track conversions by device type"
+      - "Analyze cross-device conversion paths"
+      - "Optimize for device-specific conversions"
+
+    columns:
+      ad_id:
+        name: "ad_id"
+        type: "string"
+        description: "Unique Facebook ad ID"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      date_start:
+        name: "date_start"
+        type: "string"
+        description: "Date of metrics"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: false
+
+      action_device:
+        name: "action_device"
+        type: "string"
+        description: "Device where conversion occurred"
+        primary_key: true
+        required: true
+        important: true
+        filter_required: false
+        aggregatable: false
+        searchable: true
+
+      conversion_count:
+        name: "conversion_count"
+        type: "bigint"
+        description: "Number of conversions on this device"
+        required: false
+        important: true
+        filter_required: false
+        aggregatable: true
+        searchable: false
+
+      user_id:
+        name: "user_id"
+        type: "string"
+        description: "Internal user ID"
+        required: true
+        filter_required: true
+        important: true
+        aggregatable: false
+        searchable: true
+        partition_key: true
+
+      year:
+        name: "year"
+        type: "int"
+        description: "Partition: year"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      month:
+        name: "month"
+        type: "int"
+        description: "Partition: month"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      day:
+        name: "day"
+        type: "int"
+        description: "Partition: day"
+        required: true
+        partition_key: true
+        system_column: true
+        important: false
+
+      glue_processed_at:
+        name: "glue_processed_at"
+        type: "timestamp"
+        description: "Processing timestamp"
+        required: true
+        system_column: true
+        important: false
+
+      source:
+        name: "source"
+        type: "string"
+        description: "Data source"
+        required: true
+        system_column: true
+        important: false
+
+    primary_key: ["ad_id", "date_start", "action_device"]
+    partition_keys: ["user_id", "year", "month", "day"]
+
+    date_filter_column: ["date_start"]
+
+    important_notes:
+      - "ALWAYS filter by user_id"
+      - "Tracks device where conversion happened"
+      - "Use for cross-device attribution analysis"
