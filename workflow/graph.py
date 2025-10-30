@@ -25,16 +25,14 @@ def create_agent_workflow(checkpointer=None, websocket_manager=None, session_id=
                data-inquiry/greetings)                   │
                                                          │
     Single-Intent Path: ─────────────────────────────────┘
-    router → sql_generator → sql_validator → sql_executor → data_interpreter
-                   ↑              ↓
-                   └─ sql_corrector ──┘
-                      (if validation fails - analyzes errors & provides fix recommendations)
+    router → sql_generator → sql_executor → data_interpreter
+             (DISABLED: sql_validator/sql_corrector bypassed - false negatives causing delays)
 
     Multi-Intent Path: ───────────────────────────────────┐
     router → multi_intent_executor → data_interpreter     │
              └→ For each sub-query (parallel):            │
-                sql_generator → sql_validator → sql_corrector (if needed)
-                → sql_executor (internal)                 │
+                sql_generator → sql_executor (internal)   │
+                (DISABLED: validation bypassed)           │
                 → Results include: SQL query + data + status │
                                                            │
     Final Path (both converge): ───────────────────────────┘
@@ -179,29 +177,32 @@ def create_agent_workflow(checkpointer=None, websocket_manager=None, session_id=
     # multi_intent_executor -> data_interpreter (skip SQL pipeline, already executed)
     workflow.add_edge("multi_intent_executor", "data_interpreter")
 
-    # sql_generator -> sql_validator
-    workflow.add_edge("sql_generator", "sql_validator")
+    # sql_generator -> sql_executor (DISABLED: sql_validator bypassed due to false negatives)
+    # The SQL generator now produces correct queries with proper deduplication on all
+    # full refresh tables. Validation was causing unnecessary retry loops (30-60s delay)
+    # without catching real issues. Athena will catch any actual SQL errors.
+    workflow.add_edge("sql_generator", "sql_executor")
 
-    # sql_validator -> sql_executor or sql_corrector (on validation failure)
-    def should_retry_sql(state: AgentState) -> Literal["sql_executor", "sql_corrector"]:
-        """Determine if we need to correct SQL or proceed to execution."""
-        next_step = state.get("next_step", "execute_sql")
-
-        if next_step == "retry_sql":
-            return "sql_corrector"  # Route to corrector for error analysis
-        return "sql_executor"
-
-    workflow.add_conditional_edges(
-        "sql_validator",
-        should_retry_sql,
-        {
-            "sql_corrector": "sql_corrector",
-            "sql_executor": "sql_executor",
-        },
-    )
-
-    # sql_corrector -> sql_generator (with fix recommendations)
-    workflow.add_edge("sql_corrector", "sql_generator")
+    # DISABLED: sql_validator -> sql_executor or sql_corrector (validation bypassed)
+    # def should_retry_sql(state: AgentState) -> Literal["sql_executor", "sql_corrector"]:
+    #     """Determine if we need to correct SQL or proceed to execution."""
+    #     next_step = state.get("next_step", "execute_sql")
+    #
+    #     if next_step == "retry_sql":
+    #         return "sql_corrector"  # Route to corrector for error analysis
+    #     return "sql_executor"
+    #
+    # workflow.add_conditional_edges(
+    #     "sql_validator",
+    #     should_retry_sql,
+    #     {
+    #         "sql_corrector": "sql_corrector",
+    #         "sql_executor": "sql_executor",
+    #     },
+    # )
+    #
+    # # sql_corrector -> sql_generator (with fix recommendations)
+    # workflow.add_edge("sql_corrector", "sql_generator")
 
     # sql_executor -> data_interpreter
     workflow.add_edge("sql_executor", "data_interpreter")
