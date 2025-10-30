@@ -142,7 +142,7 @@ prompt: |
      - **If semantically wrong, mark is_valid: false even if syntax is perfect**
 
   **PRIORITY #2: User Isolation** ⚠️
-     - Does query filter by user_id = '{user_id}'?
+     - Does query filter by user_id = '{{user_id}}'?
      - For JOINs, does it join on user_id as well as id?
      - This is CRITICAL for data security and isolation
 
@@ -159,15 +159,15 @@ prompt: |
        ```sql
        WHERE glue_processed_at = (
            SELECT MAX(glue_processed_at)
-           FROM {table_name}
-           WHERE user_id = '{user_id}'
+           FROM {{table_name}}
+           WHERE user_id = '{{user_id}}'
        )
        ```
      - **For JOINs**, the filter can be in the JOIN ON clause:
        ```sql
-       JOIN {table} ON ...
-         AND {table}.glue_processed_at = (
-             SELECT MAX(glue_processed_at) FROM {table} WHERE user_id = '{user_id}'
+       JOIN {{table}} ON ...
+         AND {{table}}.glue_processed_at = (
+             SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '{{user_id}}'
          )
        ```
      - **If missing, mark is_valid: false** - this causes inflated counts and duplicate records
@@ -261,7 +261,7 @@ prompt: |
   When is_valid is false, provide SPECIFIC, ACTIONABLE feedback:
 
   **Good Feedback**:
-  "Critical: Query is missing user_id filter. Add 'WHERE user_id = '{user_id}'' to ensure data isolation. Also, the JOIN between instagram_media and instagram_media_insights should include user_id: 'ON m.id = i.id AND m.user_id = i.user_id'."
+  "Critical: Query is missing user_id filter. Add 'WHERE user_id = '{{user_id}}'' to ensure data isolation. Also, the JOIN between instagram_media and instagram_media_insights should include user_id: 'ON m.id = i.id AND m.user_id = i.user_id'."
 
   **Bad Feedback**:
   "Query has issues."
