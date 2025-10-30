@@ -468,7 +468,6 @@ async def send_query_and_display_response(
                                 print(f"       (Total length: {len(data)} characters)")
                         elif isinstance(data, dict):
                             # Show structured data
-                            import json
                             try:
                                 data_str = json.dumps(data, indent=2)
                                 if len(data_str) < 300:
