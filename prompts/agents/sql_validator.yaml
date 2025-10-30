@@ -183,7 +183,7 @@ prompt: |
      **Required Filter Format:**
      ```sql
      -- For FROM table:
-     WHERE {table_alias}.glue_processed_at = (
+     WHERE {{table_alias}}.glue_processed_at = (
          SELECT MAX(glue_processed_at)
          FROM {{table_name}}
          WHERE user_id = '{{user_id}}'
