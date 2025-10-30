@@ -22,23 +22,200 @@ We have data from three platforms:
 
 ### Instagram Tables
 
-#### CRITICAL: Instagram Table Refresh Types
+#### 🚨 CRITICAL: Full Refresh Tables - Data Deduplication Required
 
-**`instagram_media` is a FULL REFRESH snapshot table:**
-- Contains ALL media posts from the beginning of time (not just recent posts)
-- The `timestamp` column represents when each post was originally published on Instagram
-- To get posts from last 30 days: `WHERE m.timestamp >= date_add('day', -30, current_date)`
-- DO NOT assume this table only contains recent data
+**Full refresh tables snapshot ALL data on every ETL run, creating duplicate records with new `glue_processed_at` timestamps. You MUST filter by latest `glue_processed_at` to get unique, accurate data.**
 
-**`instagram_media_insights` has NO timestamp column:**
-- Contains engagement metrics (reach, likes, comments, saved, shares)
-- To filter by post publication date, you MUST join with instagram_media
-- NEVER query this table alone for time-based queries
+---
+
+### Full Refresh Tables Requiring Deduplication
+
+**Affected tables:**
+1. `instagram_media` - Posts/content metadata
+2. `instagram_media_insights` - Engagement metrics
+3. `instagram_user_lifetime_insights` - Demographics
+4. `instagram_users` - Profile information
+5. `facebook_ad_creatives` - Ad creative details
+
+---
+
+### The Problem
+
+Without deduplication filtering:
+- ❌ Same post exists 5-10 times (one per ETL run) with different `glue_processed_at` values
+- ❌ `SELECT COUNT(*)` returns 2x-10x actual values (inflated by number of ETL runs)
+- ❌ `LIMIT 10` shows same 10 records multiple times
+- ❌ All metrics and calculations are completely wrong
+
+---
+
+### Mandatory Deduplication Filter Pattern
+
+**For EVERY full refresh table, add this WHERE clause:**
+
+```sql
+WHERE glue_processed_at = (
+    SELECT MAX(glue_processed_at)
+    FROM {table_name}
+    WHERE user_id = '{user_id}'
+)
+  AND user_id = '{user_id}'
+```
+
+---
+
+### Examples by Table
+
+#### `instagram_media` (FULL REFRESH)
+
+**Without deduplication (WRONG)**:
+```sql
+SELECT id, timestamp, caption
+FROM instagram_media
+WHERE user_id = '{user_id}'
+  AND timestamp >= date_add('day', -30, current_date)
+ORDER BY timestamp DESC LIMIT 10;
+-- ❌ Returns duplicates - same 10 posts shown multiple times
+```
+
+**With deduplication (CORRECT)**:
+```sql
+SELECT id, timestamp, caption
+FROM instagram_media
+WHERE glue_processed_at = (
+    SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+)
+  AND user_id = '{user_id}'
+  AND timestamp >= date_add('day', -30, current_date)
+ORDER BY timestamp DESC LIMIT 10;
+-- ✅ Returns unique 10 posts from latest ETL run
+```
+
+**Key facts about instagram_media:**
+- Contains ALL posts from beginning of time (not just recent)
+- `timestamp` column = when post was published on Instagram
+- `glue_processed_at` column = when ETL processed the data
+- Partition columns (year, month, day) = ETL processing date, NOT post publish date
+
+---
+
+#### `instagram_media_insights` (FULL REFRESH)
+
+**Has NO timestamp column** - must JOIN with instagram_media for time filtering.
+
+**Correct JOIN pattern with deduplication**:
+```sql
+SELECT
+  m.id,
+  m.caption,
+  m.timestamp,
+  mi.reach,
+  mi.likes,
+  mi.comments,
+  mi.saved,
+  mi.shares
+FROM instagram_media m
+LEFT JOIN instagram_media_insights mi
+  ON m.id = mi.id
+  AND m.user_id = mi.user_id
+  AND mi.glue_processed_at = (
+      SELECT MAX(glue_processed_at)
+      FROM instagram_media_insights
+      WHERE user_id = '{user_id}'
+  )
+WHERE m.glue_processed_at = (
+    SELECT MAX(glue_processed_at)
+    FROM instagram_media
+    WHERE user_id = '{user_id}'
+)
+  AND m.user_id = '{user_id}'
+  AND m.timestamp >= date_add('day', -30, current_date)
+ORDER BY m.timestamp DESC;
+```
+
+**Note**: BOTH tables need deduplication filters (one in JOIN ON clause, one in WHERE clause).
+
+---
+
+#### `instagram_user_lifetime_insights` (FULL REFRESH)
+
+**For demographics queries:**
+```sql
+SELECT
+  follower_demographics_breakdown_age_range,
+  follower_demographics_breakdown_value
+FROM instagram_user_lifetime_insights
+WHERE glue_processed_at = (
+    SELECT MAX(glue_processed_at)
+    FROM instagram_user_lifetime_insights
+    WHERE user_id = '{user_id}'
+)
+  AND user_id = '{user_id}';
+```
+
+---
+
+#### `facebook_ad_creatives` (FULL REFRESH)
+
+**When joining with ads insights:**
+```sql
+SELECT
+  i.date_start,
+  i.spend,
+  i.impressions,
+  c.name as creative_name,
+  c.body
+FROM facebook_ads_insights i
+LEFT JOIN facebook_ad_creatives c
+  ON i.ad_id = c.ad_id
+  AND i.user_id = c.user_id
+  AND c.glue_processed_at = (
+      SELECT MAX(glue_processed_at)
+      FROM facebook_ad_creatives
+      WHERE user_id = '{user_id}'
+  )
+WHERE i.user_id = '{user_id}'
+  AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY;
+```
+
+**Note**: Only `facebook_ad_creatives` needs the filter (insights is incremental).
+
+---
+
+### Incremental Tables (NO Deduplication Needed)
+
+These tables add new records daily and are naturally unique:
+- ✅ `facebook_ads_insights` (unique by ad_id + date_start)
+- ✅ All `facebook_ads_insights_*` breakdown tables
+- ✅ All `ga_*` Google Analytics tables (unique by date)
+- ✅ `instagram_user_insights` (daily snapshots, unique by date)
+
+---
+
+### Why Partition Columns DON'T Solve This
 
 **Partition columns (year, month, day):**
-- Represent when the ETL job processed the data (glue_processed_at date)
-- NOT when the post was published on Instagram
-- Use for performance optimization, but NOT for user-facing time filters
+- Represent when ETL job processed the data
+- NOT when content was published/created
+- Using them for filtering gives WRONG results
+
+**Example of incorrect approach:**
+```sql
+-- ❌ WRONG: Still returns duplicates if multiple ETL runs on same day
+SELECT * FROM instagram_media
+WHERE user_id = '{user_id}'
+  AND year = '2025' AND month = '01' AND day = '30';
+```
+
+**Correct approach:**
+```sql
+-- ✅ CORRECT: Get latest ETL run data
+SELECT * FROM instagram_media
+WHERE glue_processed_at = (
+    SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+)
+  AND user_id = '{user_id}';
+```
 
 #### `instagram_media`
 - **Timestamp Column**: `timestamp` (when content was posted)

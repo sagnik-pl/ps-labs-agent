@@ -146,6 +146,33 @@ prompt: |
      - For JOINs, does it join on user_id as well as id?
      - This is CRITICAL for data security and isolation
 
+  **PRIORITY #2.5: Full Refresh Table Deduplication** 🔍
+     - For full refresh tables, does query filter by latest glue_processed_at?
+     - Full refresh tables create duplicates on every ETL run - MUST be deduplicated
+     - **Full refresh tables requiring this check:**
+       - `instagram_media`
+       - `instagram_media_insights`
+       - `instagram_user_lifetime_insights`
+       - `instagram_users`
+       - `facebook_ad_creatives`
+     - **Required pattern** (check if present in WHERE clause or JOIN ON clause):
+       ```sql
+       WHERE glue_processed_at = (
+           SELECT MAX(glue_processed_at)
+           FROM {table_name}
+           WHERE user_id = '{user_id}'
+       )
+       ```
+     - **For JOINs**, the filter can be in the JOIN ON clause:
+       ```sql
+       JOIN {table} ON ...
+         AND {table}.glue_processed_at = (
+             SELECT MAX(glue_processed_at) FROM {table} WHERE user_id = '{user_id}'
+         )
+       ```
+     - **If missing, mark is_valid: false** - this causes inflated counts and duplicate records
+     - **Exception**: Incremental tables (facebook_ads_insights, ga_*, instagram_user_insights) don't need this
+
   **PRIORITY #3: Table/Column Existence**
      - Do all tables exist in the provided schema?
      - Do all columns exist in their respective tables?
@@ -215,7 +242,7 @@ prompt: |
   ## Validation Logic
 
   **Set is_valid: true IF**:
-  - All critical checks passed (user_isolation, table/column existence, syntax, completeness)
+  - All critical checks passed (semantic correctness, user_isolation, full_refresh_deduplication, table/column existence, syntax, completeness)
   - Validation score >= 80
   - No critical issues
   - Query is safe to execute
@@ -223,6 +250,7 @@ prompt: |
   **Set is_valid: false IF**:
   - Any critical check failed
   - Missing user_id filter (CRITICAL)
+  - Missing glue_processed_at deduplication filter for full refresh tables (CRITICAL for data accuracy)
   - Syntax errors
   - Non-existent tables or columns
   - Query won't answer user's question
@@ -243,6 +271,52 @@ prompt: |
   - Why it's a problem
   - How to fix it
   - Which line or clause needs changes
+
+  **Specific Feedback for Full Refresh Deduplication Issues**:
+
+  When a query uses full refresh tables (instagram_media, instagram_media_insights, instagram_user_lifetime_insights, instagram_users, facebook_ad_creatives) without deduplication filters:
+
+  **Template for single table:**
+  ```
+  Critical: Query uses full_refresh table '{table_name}' which contains duplicate records from multiple ETL runs. Without deduplication, this query will return inflated counts and duplicate data.
+
+  Add this WHERE clause:
+  WHERE glue_processed_at = (
+      SELECT MAX(glue_processed_at)
+      FROM {table_name}
+      WHERE user_id = '{user_id}'
+  )
+    AND user_id = '{user_id}'
+
+  Why: Full refresh tables snapshot ALL data on every ETL run. The same records exist multiple times with different glue_processed_at timestamps. This filter ensures you get only the latest ETL run data.
+  ```
+
+  **Template for JOIN of full refresh tables:**
+  ```
+  Critical: Query joins full_refresh tables (instagram_media and instagram_media_insights) without deduplication filters. This will return duplicate records.
+
+  Required fixes:
+  1. Add glue_processed_at filter for instagram_media in WHERE clause:
+     WHERE m.glue_processed_at = (SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}')
+
+  2. Add glue_processed_at filter for instagram_media_insights in JOIN ON clause:
+     LEFT JOIN instagram_media_insights mi
+       ON m.id = mi.id AND m.user_id = mi.user_id
+       AND mi.glue_processed_at = (SELECT MAX(glue_processed_at) FROM instagram_media_insights WHERE user_id = '{user_id}')
+
+  Why: Both tables are full refresh and contain duplicates. Without these filters, each post will appear multiple times from different ETL runs.
+  ```
+
+  **Template for COUNT queries:**
+  ```
+  Critical: COUNT query on full_refresh table '{table_name}' will return inflated results (2x-10x actual count) without deduplication filter.
+
+  Add WHERE clause:
+  WHERE glue_processed_at = (SELECT MAX(glue_processed_at) FROM {table_name} WHERE user_id = '{user_id}')
+    AND user_id = '{user_id}'
+
+  Example: If you have 100 posts and 5 ETL runs, COUNT(*) will return 500 instead of 100 without this filter.
+  ```
 
   ## Special Instructions
 

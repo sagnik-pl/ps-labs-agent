@@ -539,6 +539,131 @@ prompt: |
       * Step 2: Filter by m.timestamp for time window
       * Step 3: Select metrics from instagram_media_insights (mi.reach, mi.likes, etc.)
 
+  - **🚨 CRITICAL: Full Refresh Table Deduplication** (MANDATORY FOR DATA ACCURACY):
+
+    **Problem**: Full refresh tables snapshot ALL data on every ETL run, creating duplicate records with new `glue_processed_at` timestamps.
+    Without proper filtering, queries return the SAME data multiple times from different ETL runs.
+
+    **Full refresh tables that REQUIRE deduplication filter:**
+    - `instagram_media` (posts/content)
+    - `instagram_media_insights` (engagement metrics)
+    - `instagram_user_lifetime_insights` (demographics)
+    - `instagram_users` (profile info)
+    - `facebook_ad_creatives` (ad creative details)
+
+    **MANDATORY Filter Pattern** - Add this to EVERY query using full refresh tables:
+    ```sql
+    WHERE glue_processed_at = (
+        SELECT MAX(glue_processed_at)
+        FROM {table_name}
+        WHERE user_id = '{user_id}'
+    )
+      AND user_id = '{user_id}'
+    ```
+
+    **Why this is CRITICAL:**
+    - ❌ Without filter: COUNT returns 2x-10x actual values (inflated by number of ETL runs)
+    - ❌ Without filter: LIMIT 10 shows same 10 records multiple times with different timestamps
+    - ❌ Without filter: Metrics calculations are completely wrong
+    - ✅ With filter: Get ONLY the latest ETL run data (accurate, unique records)
+
+    **Example 1: Simple SELECT from instagram_media**
+    ```sql
+    -- ❌ WRONG (returns duplicates from multiple ETL runs):
+    SELECT id, timestamp, caption
+    FROM instagram_media
+    WHERE user_id = '{user_id}'
+      AND timestamp >= date_add('day', -30, current_date)
+    ORDER BY timestamp DESC LIMIT 10
+
+    -- ✅ CORRECT (returns unique posts from latest ETL run):
+    SELECT id, timestamp, caption
+    FROM instagram_media
+    WHERE glue_processed_at = (
+        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+    )
+      AND user_id = '{user_id}'
+      AND timestamp >= date_add('day', -30, current_date)
+    ORDER BY timestamp DESC LIMIT 10
+    ```
+
+    **Example 2: COUNT query**
+    ```sql
+    -- ❌ WRONG (count is inflated):
+    SELECT COUNT(*) as post_count
+    FROM instagram_media
+    WHERE user_id = '{user_id}'
+
+    -- ✅ CORRECT (accurate count):
+    SELECT COUNT(*) as post_count
+    FROM instagram_media
+    WHERE glue_processed_at = (
+        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+    )
+      AND user_id = '{user_id}'
+    ```
+
+    **Example 3: JOIN of TWO full refresh tables**
+    ```sql
+    -- ✅ CORRECT (BOTH tables need deduplication filter):
+    SELECT
+      m.id,
+      m.caption,
+      m.timestamp,
+      mi.likes,
+      mi.comments,
+      mi.reach
+    FROM instagram_media m
+    LEFT JOIN instagram_media_insights mi
+      ON m.id = mi.id
+      AND m.user_id = mi.user_id
+      AND mi.glue_processed_at = (
+          SELECT MAX(glue_processed_at)
+          FROM instagram_media_insights
+          WHERE user_id = '{user_id}'
+      )
+    WHERE m.glue_processed_at = (
+        SELECT MAX(glue_processed_at)
+        FROM instagram_media
+        WHERE user_id = '{user_id}'
+    )
+      AND m.user_id = '{user_id}'
+      AND m.timestamp >= date_add('day', -30, current_date)
+    ORDER BY m.timestamp DESC
+    ```
+
+    **Example 4: Mixed incremental + full refresh JOIN**
+    ```sql
+    -- ✅ CORRECT (Only full refresh table needs filter):
+    SELECT
+      i.date_start,
+      i.spend,
+      i.impressions,
+      c.name as creative_name
+    FROM facebook_ads_insights i  -- Incremental (no filter needed)
+    LEFT JOIN facebook_ad_creatives c  -- Full refresh (filter required)
+      ON i.ad_id = c.ad_id
+      AND i.user_id = c.user_id
+      AND c.glue_processed_at = (
+          SELECT MAX(glue_processed_at)
+          FROM facebook_ad_creatives
+          WHERE user_id = '{user_id}'
+      )
+    WHERE i.user_id = '{user_id}'
+      AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY
+    ```
+
+    **Incremental tables that DO NOT need this filter:**
+    - facebook_ads_insights (unique by ad_id + date_start)
+    - facebook_ads_insights_* (all breakdown tables)
+    - ga_* (all Google Analytics tables, unique by date)
+    - instagram_user_insights (daily snapshots, unique by date)
+
+    **REMEMBER**:
+    - ⚠️ Add deduplication filter to EVERY full refresh table in your query
+    - ⚠️ In JOINs, each full refresh table needs its own separate filter
+    - ⚠️ Partition columns (year, month, day) do NOT eliminate duplicates - use glue_processed_at
+
     **Facebook Ads Tables:**
     - ALL facebook tables: INCREMENTAL updates (new records added daily)
       * Use 'date_start' column for time filtering (format: YYYY-MM-DD STRING)
