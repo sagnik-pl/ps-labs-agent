@@ -286,6 +286,8 @@ WHERE user_id = '{{user_id}}' AND year = '2025' AND month = '01'
 
 ## Common Query Patterns
 
+⚠️ **CRITICAL**: All examples below include mandatory deduplication filters for full refresh tables. Every query using `instagram_media` or `instagram_media_insights` MUST include these filters to avoid duplicate data.
+
 ### Recent Posts Performance
 ```sql
 SELECT
@@ -297,8 +299,19 @@ SELECT
   i.comments
 FROM instagram_media m
 JOIN instagram_media_insights i
-  ON m.id = i.id AND m.user_id = i.user_id
-WHERE m.user_id = '{{user_id}}'
+  ON m.id = i.id
+  AND m.user_id = i.user_id
+  AND i.glue_processed_at = (
+      SELECT MAX(glue_processed_at)
+      FROM instagram_media_insights
+      WHERE user_id = '{{user_id}}'
+  )
+WHERE m.glue_processed_at = (
+    SELECT MAX(glue_processed_at)
+    FROM instagram_media
+    WHERE user_id = '{{user_id}}'
+  )
+  AND m.user_id = '{{user_id}}'
   AND m.year = 2025
   AND m.month = 10
 ORDER BY m.timestamp DESC
@@ -314,8 +327,19 @@ SELECT
   (CAST(i.likes AS DOUBLE) / NULLIF(i.reach, 0)) * 100 as engagement_rate
 FROM instagram_media m
 JOIN instagram_media_insights i
-  ON m.id = i.id AND m.user_id = i.user_id
-WHERE m.user_id = '{{user_id}}'
+  ON m.id = i.id
+  AND m.user_id = i.user_id
+  AND i.glue_processed_at = (
+      SELECT MAX(glue_processed_at)
+      FROM instagram_media_insights
+      WHERE user_id = '{{user_id}}'
+  )
+WHERE m.glue_processed_at = (
+    SELECT MAX(glue_processed_at)
+    FROM instagram_media
+    WHERE user_id = '{{user_id}}'
+  )
+  AND m.user_id = '{{user_id}}'
 ORDER BY engagement_rate DESC
 LIMIT 10
 ```
@@ -329,8 +353,19 @@ SELECT
   AVG(i.likes) as avg_likes
 FROM instagram_media m
 JOIN instagram_media_insights i
-  ON m.id = i.id AND m.user_id = i.user_id
-WHERE m.user_id = '{{user_id}}'
+  ON m.id = i.id
+  AND m.user_id = i.user_id
+  AND i.glue_processed_at = (
+      SELECT MAX(glue_processed_at)
+      FROM instagram_media_insights
+      WHERE user_id = '{{user_id}}'
+  )
+WHERE m.glue_processed_at = (
+    SELECT MAX(glue_processed_at)
+    FROM instagram_media
+    WHERE user_id = '{{user_id}}'
+  )
+  AND m.user_id = '{{user_id}}'
 GROUP BY DATE_TRUNC('day', m.timestamp)
 ORDER BY date DESC
 ```

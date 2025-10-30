@@ -147,31 +147,62 @@ prompt: |
      - This is CRITICAL for data security and isolation
 
   **PRIORITY #2.5: Full Refresh Table Deduplication** 🔍
-     - For full refresh tables, does query filter by latest glue_processed_at?
-     - Full refresh tables create duplicates on every ETL run - MUST be deduplicated
-     - **Full refresh tables requiring this check:**
-       - `instagram_media`
-       - `instagram_media_insights`
-       - `instagram_user_lifetime_insights`
-       - `instagram_users`
-       - `facebook_ad_creatives`
-     - **Required pattern** (check if present in WHERE clause or JOIN ON clause):
-       ```sql
-       WHERE glue_processed_at = (
+
+     **CRITICAL**: Use this ALGORITHMIC validation procedure to systematically check EVERY table:
+
+     **Step 1: Parse ALL Tables from SQL**
+     - Extract table name from FROM clause
+     - Extract EVERY table name from JOIN clauses
+     - List them: [table1, table2, table3, ...]
+
+     **Step 2: Identify Full Refresh Tables**
+     - For EACH table in your list, check if it's full refresh:
+       - ✅ Full Refresh: instagram_media, instagram_media_insights, instagram_user_lifetime_insights, instagram_users, facebook_ad_creatives
+       - ❌ Incremental: facebook_ads_insights, facebook_ads_insights_*, ga_*, instagram_user_insights (skip these)
+
+     **Step 3: Verify Deduplication Filter for EACH Full Refresh Table**
+     - For EACH full refresh table found in Step 2:
+
+       **IF table is in FROM clause:**
+       - ✅ Check: WHERE clause contains `{table}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {table} WHERE user_id = '...')`
+       - ❌ If missing → Mark is_valid: false
+
+       **IF table is in JOIN clause:**
+       - ✅ Check: JOIN ON clause contains `AND {table}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {table} WHERE user_id = '...')`
+       - ❌ If missing → Mark is_valid: false
+
+     **Step 4: Report Results**
+     - If ALL full refresh tables have filters → Pass this check
+     - If ANY full refresh table is missing filter → FAIL with specific table name in critical_issues
+
+     **Common Validation Failures:**
+     - ❌ Query uses instagram_media + instagram_media_insights, but only instagram_media has filter
+     - ❌ instagram_media_insights is in JOIN but missing glue_processed_at in ON clause
+     - ❌ Query has filter but wrong format (missing subquery with MAX)
+
+     **Required Filter Format:**
+     ```sql
+     -- For FROM table:
+     WHERE {table_alias}.glue_processed_at = (
+         SELECT MAX(glue_processed_at)
+         FROM {table_name}
+         WHERE user_id = '{{user_id}}'
+     )
+
+     -- For JOIN table:
+     JOIN {table_name} {alias}
+       ON ... [other conditions]
+       AND {alias}.glue_processed_at = (
            SELECT MAX(glue_processed_at)
-           FROM {{table_name}}
+           FROM {table_name}
            WHERE user_id = '{{user_id}}'
        )
-       ```
-     - **For JOINs**, the filter can be in the JOIN ON clause:
-       ```sql
-       JOIN {{table}} ON ...
-         AND {{table}}.glue_processed_at = (
-             SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '{{user_id}}'
-         )
-       ```
-     - **If missing, mark is_valid: false** - this causes inflated counts and duplicate records
-     - **Exception**: Incremental tables (facebook_ads_insights, ga_*, instagram_user_insights) don't need this
+     ```
+
+     **What to Report if Failed:**
+     - List specific table name(s) missing the filter
+     - Specify whether it's in FROM or JOIN
+     - Use the feedback templates below (lines 275-319) for guidance
 
   **PRIORITY #3: Table/Column Existence**
      - Do all tables exist in the provided schema?

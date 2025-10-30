@@ -659,10 +659,77 @@ prompt: |
     - ga_* (all Google Analytics tables, unique by date)
     - instagram_user_insights (daily snapshots, unique by date)
 
-    **REMEMBER**:
-    - ⚠️ Add deduplication filter to EVERY full refresh table in your query
-    - ⚠️ In JOINs, each full refresh table needs its own separate filter
-    - ⚠️ Partition columns (year, month, day) do NOT eliminate duplicates - use glue_processed_at
+    ---
+
+    ## 🚨 MANDATORY: FULL REFRESH DEDUPLICATION CHECKLIST
+
+    **Before finalizing your SQL query, follow this systematic verification procedure:**
+
+    ### Step 1: List ALL Tables in Your Query
+    - Scan your FROM clause → write down the table name
+    - Scan EVERY JOIN clause → write down each joined table name
+    - Example: `FROM instagram_media m JOIN instagram_media_insights mi` → Tables: [instagram_media, instagram_media_insights]
+
+    ### Step 2: Identify Full Refresh Tables
+    For EACH table from Step 1, check if it's full refresh:
+    - ✅ Full Refresh (needs filter): instagram_media, instagram_media_insights, instagram_user_lifetime_insights, instagram_users, facebook_ad_creatives
+    - ❌ Incremental (no filter needed): facebook_ads_insights, ga_*, instagram_user_insights, all other tables
+
+    ### Step 3: Verify Deduplication Filter for EACH Full Refresh Table
+    For EACH full refresh table identified in Step 2:
+
+    **IF table is in FROM clause:**
+    - ✅ Must have filter in WHERE clause:
+      ```sql
+      WHERE {table}.glue_processed_at = (
+          SELECT MAX(glue_processed_at)
+          FROM {table}
+          WHERE user_id = '{user_id}'
+      )
+      ```
+
+    **IF table is in JOIN clause:**
+    - ✅ Must have filter in JOIN ON clause:
+      ```sql
+      JOIN {table} t
+        ON ... [your join conditions]
+        AND t.glue_processed_at = (
+            SELECT MAX(glue_processed_at)
+            FROM {table}
+            WHERE user_id = '{user_id}'
+        )
+      ```
+
+    ### Step 4: Final Verification
+    - [ ] I have listed ALL tables in my query
+    - [ ] I have identified which are full refresh
+    - [ ] EVERY full refresh table has a glue_processed_at filter
+    - [ ] No full refresh table is missing its filter
+
+    **If you cannot check ALL boxes above, DO NOT generate the query. Go back and add missing filters.**
+
+    ### Common Failure Patterns to Avoid:
+    ❌ **WRONG**: Only main table has filter, joined table doesn't
+    ```sql
+    FROM instagram_media m
+    JOIN instagram_media_insights mi ON m.id = mi.id  -- Missing mi.glue_processed_at!
+    WHERE m.glue_processed_at = (...)  -- Only m has filter
+    ```
+
+    ✅ **CORRECT**: BOTH tables have filters
+    ```sql
+    FROM instagram_media m
+    JOIN instagram_media_insights mi
+      ON m.id = mi.id
+      AND mi.glue_processed_at = (  -- ✅ mi has filter
+          SELECT MAX(glue_processed_at) FROM instagram_media_insights WHERE user_id = '{user_id}'
+      )
+    WHERE m.glue_processed_at = (  -- ✅ m has filter
+        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+    )
+    ```
+
+    ---
 
     **Facebook Ads Tables:**
     - ALL facebook tables: INCREMENTAL updates (new records added daily)
