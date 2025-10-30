@@ -38,6 +38,38 @@ prompt: |
 
   **Previous Validation Feedback** (if retry): {previous_feedback}
 
+  ## 🚨 BEFORE YOU VALIDATE: Read the SQL Carefully
+
+  **STEP 0: Parse what's ACTUALLY in the SQL above**
+
+  Before applying any validation rules, READ THE SQL and identify:
+
+  1. **Tables used**: Which tables appear in FROM and JOIN clauses?
+     - Example: FROM instagram_media m → Table: instagram_media
+     - Example: JOIN instagram_media_insights mi → Table: instagram_media_insights
+
+  2. **Filters present**: What filters are in WHERE and JOIN ON clauses?
+     - Look for: `glue_processed_at = (SELECT MAX(glue_processed_at)...)`
+     - Look for: `user_id = '...'`
+     - Check BOTH WHERE clause AND JOIN ON clauses
+
+  3. **What's ACTUALLY there**: Don't assume what's missing - first see what EXISTS.
+
+  **Example of careful reading**:
+  ```sql
+  FROM instagram_media m
+  LEFT JOIN instagram_media_insights mi
+    ON m.id = mi.id
+    AND mi.glue_processed_at = (SELECT MAX...)  ← This filter EXISTS!
+  WHERE m.glue_processed_at = (SELECT MAX...)   ← This filter EXISTS!
+  ```
+  → Both tables have deduplication filters. This is VALID for Priority #2.5.
+
+  **DON'T do this**: See "instagram_media" → assume filter is missing → mark invalid
+  **DO this**: See "instagram_media" → search for filter → find it → mark valid
+
+  ---
+
   ## Validation Process: Semantic Correctness FIRST
 
   **PRIORITY #1: SEMANTIC VALIDATION** - Does the SQL answer the user's question?

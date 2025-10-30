@@ -1,7 +1,7 @@
 """
 Prompt management system for agent prompts and knowledge bases.
 
-Cache Version: 2025-10-30-v2 (Force reload after template placeholder fixes)
+Cache Version: 2025-10-30-v3 (Force reload after validator false negative fix)
 """
 from typing import Dict, Any, Optional
 from pathlib import Path
