@@ -168,6 +168,11 @@ class WorkflowNodes:
 
         try:
             result = json.loads(response.content)
+
+            # Validate decomposition for common unanswerable patterns
+            if result["classification"].get("requires_decomposition"):
+                result = self._validate_decomposition_quality(result, query)
+
             return result
         except json.JSONDecodeError:
             # Fallback: treat as single-intent
@@ -184,6 +189,45 @@ class WorkflowNodes:
                     "sub_queries": []
                 }
             }
+
+    def _validate_decomposition_quality(self, result: Dict, original_query: str) -> Dict:
+        """
+        Lightweight validation: flag sub-queries that may be unanswerable.
+
+        Logs warnings for potentially problematic sub-queries but doesn't block execution.
+        The SQL generator will provide final validation against schemas.
+
+        Args:
+            result: Decomposition result from LLM
+            original_query: Original user query
+
+        Returns:
+            Validated result with warnings added
+        """
+        UNANSWERABLE_PATTERNS = {
+            'nlp_analysis': ['topic', 'sentiment', 'emotion', 'tone', 'context analysis', 'meaning'],
+            'external_data': ['competitor', 'market', 'industry', 'benchmark', 'comparison with others'],
+            'unavailable_platforms': ['tiktok', 'pinterest', 'linkedin', 'twitter', 'email campaign', 'sms campaign'],
+            'content_analysis_we_dont_have': ['review', 'rating', 'customer feedback', 'comment text', 'caption sentiment'],
+            'data_we_dont_track': ['weather', 'seasonal', 'holiday impact', 'external events', 'news'],
+        }
+
+        flagged_queries = []
+        for sq in result.get("decomposition", {}).get("sub_queries", []):
+            question_lower = sq["question"].lower()
+
+            for category, patterns in UNANSWERABLE_PATTERNS.items():
+                if any(pattern in question_lower for pattern in patterns):
+                    logger.warning(f"⚠️ Sub-query may be unanswerable ({category}): {sq['question']}")
+                    sq["validation_warning"] = f"May require {category.replace('_', ' ')}"
+                    flagged_queries.append(sq["id"])
+                    break  # Only flag once per sub-query
+
+        if flagged_queries:
+            logger.info(f"📋 Flagged {len(flagged_queries)}/{len(result.get('decomposition', {}).get('sub_queries', []))} potentially unanswerable sub-queries")
+            result["decomposition"]["validation_warnings"] = flagged_queries
+
+        return result
 
     def planner_node(self, state: AgentState) -> Dict[str, Any]:
         """

@@ -322,6 +322,137 @@ class SemanticLayer:
                 data_streams.add(stream_type)
         return sorted(list(data_streams))
 
+    def _detect_query_categories(self, user_query: str) -> List[str]:
+        """
+        Detect which data categories are relevant to the user's query.
+
+        Uses keyword matching against typical_use_cases_keywords from table schemas
+        to identify relevant categories like "engagement", "content", "demographics", etc.
+
+        Args:
+            user_query: Natural language query from user
+
+        Returns:
+            List of detected categories (e.g., ["content", "engagement"])
+
+        Example:
+            >>> semantic_layer._detect_query_categories("Show me my top posts by likes")
+            ['content', 'engagement']
+        """
+        query_lower = user_query.lower()
+        category_scores = {}
+
+        # Iterate through all tables and match keywords
+        for table_name, table_schema in self.schemas.items():
+            subcategory = table_schema.get('subcategory')
+            keywords = table_schema.get('typical_use_cases_keywords', [])
+
+            if not subcategory or not keywords:
+                continue
+
+            # Count keyword matches for this subcategory
+            match_count = sum(1 for keyword in keywords if keyword.lower() in query_lower)
+
+            if match_count > 0:
+                category_scores[subcategory] = category_scores.get(subcategory, 0) + match_count
+
+        # Return subcategories with at least one match, sorted by match count
+        detected_categories = sorted(
+            category_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # If no categories detected, return empty list (will fall back to all tables)
+        if not detected_categories:
+            return []
+
+        # Return top 3 categories to avoid over-filtering
+        return [cat[0] for cat in detected_categories[:3]]
+
+    def filter_relevant_tables(
+        self,
+        user_query: str,
+        stream_type: str,
+        max_tables: int = 10
+    ) -> List[str]:
+        """
+        Filter tables by query intent to reduce prompt size and improve accuracy.
+
+        Uses smart filtering based on:
+        1. Query category detection (content, engagement, demographics, etc.)
+        2. Table priority ranking (primary > secondary > supplementary)
+        3. Keyword matching against typical_use_cases_keywords
+
+        Args:
+            user_query: Natural language query from user
+            stream_type: Platform to filter (instagram, facebook, google_analytics)
+            max_tables: Maximum number of tables to return (default: 10)
+
+        Returns:
+            List of filtered table names, ordered by relevance
+
+        Example:
+            >>> semantic_layer.filter_relevant_tables(
+            ...     "Show me my top Instagram posts by engagement",
+            ...     "instagram",
+            ...     max_tables=5
+            ... )
+            ['instagram_media', 'instagram_media_insights']
+        """
+        # Step 1: Detect query categories from keywords
+        detected_categories = self._detect_query_categories(user_query)
+
+        # Step 2: Get all tables for this stream
+        all_tables = self.list_tables_by_data_stream(stream_type)
+
+        # Step 3: Score and filter tables
+        priority_rank = {'primary': 3, 'secondary': 2, 'supplementary': 1}
+        table_scores = []
+
+        for table_name in all_tables:
+            schema = self.get_table_schema(table_name)
+            if not schema:
+                continue
+
+            subcategory = schema.get('subcategory', '')
+            priority = schema.get('priority', 'secondary')
+            keywords = schema.get('typical_use_cases_keywords', [])
+
+            # Calculate relevance score
+            score = 0
+
+            # Category match (highest weight)
+            if detected_categories and subcategory in detected_categories:
+                category_position = detected_categories.index(subcategory)
+                score += (10 - category_position * 2)  # 10 for 1st match, 8 for 2nd, 6 for 3rd
+
+            # Priority boost
+            score += priority_rank.get(priority, 1) * 2
+
+            # Keyword match bonus
+            query_lower = user_query.lower()
+            keyword_matches = sum(1 for kw in keywords if kw.lower() in query_lower)
+            score += keyword_matches
+
+            table_scores.append((table_name, score, priority))
+
+        # Step 4: Sort by score (desc), then priority (primary first)
+        table_scores.sort(key=lambda x: (x[1], priority_rank.get(x[2], 0)), reverse=True)
+
+        # Step 5: Return top N tables
+        filtered_tables = [t[0] for t in table_scores[:max_tables]]
+
+        # Fallback: If no tables matched (score 0 for all), return primary tables
+        if not filtered_tables or all(score == 0 for _, score, _ in table_scores[:max_tables]):
+            primary_tables = [
+                t[0] for t in table_scores
+                if self.get_table_schema(t[0]).get('priority') == 'primary'
+            ]
+            return primary_tables[:max_tables]
+
+        return filtered_tables
+
     def get_aggregatable_columns(self, table_name: str) -> List[str]:
         """Get list of columns that can be aggregated (SUM, AVG, etc.)."""
         table = self.get_table_schema(table_name)
@@ -648,15 +779,30 @@ class SemanticLayer:
 
         # Define platform keywords and their variations
         UNAVAILABLE_PLATFORMS = {
+            # Social Media Platforms
             'snapchat': ['snapchat', 'snap chat', 'snap'],
             'tiktok': ['tiktok', 'tik tok'],
             'pinterest': ['pinterest', 'pin'],
             'linkedin': ['linkedin', 'linked in'],
-            'twitter': ['twitter', 'x.com', 'tweet'],
+            'twitter': ['twitter', 'x.com', 'tweet', 'tweets'],
             'youtube': ['youtube', 'yt'],
-            'google_analytics': ['google analytics', 'ga4', 'ga'],
-            'shopify': ['shopify'],
-            'amazon': ['amazon seller', 'amazon ads'],
+
+            # E-commerce Platforms
+            'shopify': ['shopify', 'shopify store'],
+            'amazon': ['amazon seller', 'amazon marketplace', 'amazon store'],
+            'woocommerce': ['woocommerce', 'woo commerce'],
+            'bigcommerce': ['bigcommerce', 'big commerce'],
+
+            # Marketing Channels
+            'email_marketing': ['klaviyo', 'mailchimp', 'email campaigns', 'email marketing'],
+            'sms_marketing': ['attentive', 'postscript', 'sms campaigns', 'sms marketing', 'text message marketing'],
+            'google_ads': ['google ads', 'google adwords', 'search ads', 'display ads', 'google shopping ads'],
+            'tiktok_ads': ['tiktok ads', 'tik tok ads'],
+            'amazon_ads': ['amazon ads', 'amazon advertising'],
+
+            # Other Data Sources
+            'crm': ['salesforce', 'hubspot', 'crm data', 'customer data platform'],
+            'reviews': ['trustpilot', 'yelp', 'google reviews', 'review data'],
         }
 
         # Get list of available platforms from schemas
@@ -668,6 +814,8 @@ class SemanticLayer:
             AVAILABLE_PLATFORMS.append('Instagram')
         if any('meta' in table or 'facebook' in table for table in available_tables):
             AVAILABLE_PLATFORMS.append('Meta Ads (Facebook/Instagram Ads)')
+        if any(table.startswith('ga_') or 'google_analytics' in table for table in available_tables):
+            AVAILABLE_PLATFORMS.append('Google Analytics (Website & E-commerce)')
 
         # Check for unavailable platform mentions
         # IMPORTANT: Use word boundary matching to avoid false positives
@@ -683,15 +831,17 @@ class SemanticLayer:
         # If we found unavailable platforms, return guidance
         if missing_platforms:
             platforms_str = ', '.join(missing_platforms)
-            available_str = '\n- '.join(AVAILABLE_PLATFORMS)
 
             return {
                 'available': False,
                 'missing_platforms': missing_platforms,
                 'available_platforms': AVAILABLE_PLATFORMS,
                 'suggestion': f"I don't have access to {platforms_str} data yet.\n\n"
-                             f"Currently I can analyze:\n- {available_str}\n\n"
-                             f"Would you like me to analyze one of these instead?"
+                             f"**Currently available data sources:**\n"
+                             f"• **Instagram** - Organic posts, stories, reels, engagement, demographics\n"
+                             f"• **Facebook/Instagram Ads** - Campaigns, creatives, spend, ROAS, conversions\n"
+                             f"• **Google Analytics** - Website traffic, conversions, e-commerce, user behavior\n\n"
+                             f"Would you like me to analyze data from one of these platforms instead?"
             }
 
         # Data is available (or no specific platform mentioned)
@@ -1262,6 +1412,154 @@ class SemanticLayer:
             'options': []
         }
 
+    def detect_strategy_advisory_query(self, user_query: str) -> Dict[str, Any]:
+        """
+        Detect if user is asking for strategic advice vs data analytics.
+
+        Identifies strategy/advisory questions like:
+        - "For a budget of $6000, how should I allocate it?"
+        - "What's the best channel mix for startups?"
+        - "How much should I spend on Meta vs Google?"
+
+        Args:
+            user_query: Natural language query from user
+
+        Returns:
+            Dict with:
+                - is_advisory: bool (True if strategy advisory question)
+                - advisory_topic: str | None (budget_allocation, channel_strategy, etc.)
+                - relevant_kb: List[str] (which knowledge bases to use)
+                - calculation_needed: bool (whether to call calculation functions)
+                - has_budget_amount: bool (whether $ amount is mentioned)
+
+        Example:
+            >>> detect_strategy_advisory_query("For $6000, how should I allocate my budget?")
+            {
+                'is_advisory': True,
+                'advisory_topic': 'budget_allocation',
+                'relevant_kb': ['media_planning'],
+                'calculation_needed': True,
+                'has_budget_amount': True
+            }
+        """
+        query_lower = user_query.lower()
+
+        # ========== CHECK 1: Detect Data Requests (NOT advisory) ==========
+        # If user is requesting their own data, it's NOT an advisory query
+        DATA_REQUEST_VERBS = [
+            'show me', 'get me', 'fetch', 'display', 'list',
+            'what are my', 'what is my', 'how many',
+            'how much is my', 'how much was my', 'how much did my'
+        ]
+
+        if any(verb in query_lower for verb in DATA_REQUEST_VERBS):
+            return {
+                'is_advisory': False,
+                'advisory_topic': None,
+                'relevant_kb': [],
+                'calculation_needed': False,
+                'has_budget_amount': False
+            }
+
+        # ========== CHECK 2: Detect Strategy/Advisory Keywords ==========
+        # NOTE: Order matters - first match wins! More specific patterns should come first.
+        ADVISORY_PATTERNS = {
+            'budget_allocation': [
+                'how should i allocate', 'how to allocate', 'how to distribute',
+                'budget allocation', 'distribute budget', 'split my budget',
+                'divide budget', 'allocate budget'
+            ],
+            'budget_planning': [
+                'for a budget of', 'with $', 'if i have $',
+                'budget of $', 'spending $', 'for my budget'
+            ],
+            # Retention strategy BEFORE channel_strategy to avoid 'should i use' false positive
+            'retention_strategy': [
+                'improve retention', 'customer retention', 'loyalty program',
+                'win-back campaign', 'win back', 'reduce churn', 'repeat purchase',
+                'email sequence', 'post-purchase', 'post purchase', 'subscription model',
+                'customer loyalty', 'retention rate', 'churn rate',
+                'reactivate customers', 'bring back customers'
+            ],
+            'customer_segmentation': [
+                'segment my customers', 'segment customers', 'how should i segment',
+                'rfm analysis', 'customer segmentation', 'identify vip',
+                'customer breakdown', 'lifecycle stage', 'customer segments',
+                'segmentation strategy', 'high value customers', 'customer groups',
+                'vip customers', 'who are my best customers'
+            ],
+            'referral_program': [
+                'referral program', 'referral incentive', 'referrals reduce',
+                'referral strategy', 'referral campaign', 'viral loop',
+                'word of mouth', 'customer referral', 'ambassador program',
+                'viral growth', 'refer a friend', 'community building',
+                'incentive structure', 'referrals', 'referral'
+            ],
+            'scaling_strategy': [
+                'when to scale', 'when should i scale', 'how to scale', 'scale my',
+                'product market fit', 'product-market fit', 'pmf',
+                'geographic expansion', 'expand to new markets', 'market expansion',
+                'scaling playbook', 'growth plateau', 'growth has stalled', 'growth stalled',
+                'scaling ads', 'scale ad spend', 'rapid growth', 'scale my business',
+                'revenue has been flat', 'flat revenue', 'stagnant growth'
+            ],
+            'channel_strategy': [
+                'what channel', 'which channel', 'best channel',
+                'channel mix', 'channel strategy',
+                'which platform', 'what platform'
+            ],
+            'optimization': [
+                'how to optimize', 'optimize my', 'improve my',
+                'best way to', 'optimal', 'what is the best',
+                'recommendation for', 'advice on'
+            ]
+        }
+
+        # ========== CHECK 3: Detect Budget Amount ==========
+        import re
+        # Match patterns like $6000, $6,000, $6K, etc.
+        has_budget_amount = bool(re.search(r'\$\d{1,3}(,\d{3})*(\.\d{2})?|\$\d+k', query_lower))
+
+        # ========== CHECK 4: Detect Advisory Topic ==========
+        advisory_topic = None
+        for topic, patterns in ADVISORY_PATTERNS.items():
+            if any(pattern in query_lower for pattern in patterns):
+                advisory_topic = topic
+                break
+
+        # If we found an advisory topic OR a budget amount, it's likely advisory
+        if advisory_topic or has_budget_amount:
+            # Map topics to relevant knowledge bases
+            kb_mapping = {
+                'budget_allocation': ['media_planning'],
+                'channel_strategy': ['media_planning', 'platform_best_practices'],
+                'budget_planning': ['media_planning', 'financial_metrics'],
+                'optimization': ['media_planning', 'growth_strategies'],
+                'retention_strategy': ['growth_strategies', 'financial_metrics'],
+                'customer_segmentation': ['growth_strategies'],
+                'referral_program': ['growth_strategies', 'financial_metrics'],
+                'scaling_strategy': ['growth_strategies', 'media_planning', 'financial_metrics']
+            }
+
+            relevant_kb = kb_mapping.get(advisory_topic, ['media_planning'])
+
+            return {
+                'is_advisory': True,
+                'advisory_topic': advisory_topic,
+                'relevant_kb': relevant_kb,
+                'calculation_needed': has_budget_amount,
+                'has_budget_amount': has_budget_amount
+            }
+
+        # Default: not an advisory query
+        return {
+            'is_advisory': False,
+            'advisory_topic': None,
+            'relevant_kb': [],
+            'calculation_needed': False,
+            'has_budget_amount': False
+        }
+
 
 # Global singleton instance
 semantic_layer = SemanticLayer()
@@ -1302,3 +1600,8 @@ def detect_comparison_query(user_query: str) -> Dict[str, Any]:
 def detect_data_inquiry_query(user_query: str) -> Dict[str, Any]:
     """Detect if user is asking ABOUT data availability rather than requesting data."""
     return semantic_layer.detect_data_inquiry_query(user_query)
+
+
+def detect_strategy_advisory_query(user_query: str) -> Dict[str, Any]:
+    """Detect if user is asking for strategic advice vs data analytics."""
+    return semantic_layer.detect_strategy_advisory_query(user_query)

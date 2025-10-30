@@ -209,6 +209,72 @@ prompt: |
   }}
   ```
 
+  ## Available Data Sources & Capabilities
+
+  When decomposing queries, ensure sub-queries map to available data. We have:
+
+  ### Instagram Data (5 tables)
+  **What we have**:
+  - Content metadata: Posts, reels, captions, timestamps, media types
+  - Engagement metrics: Likes, comments, saves, shares, reach, impressions
+  - Account performance: Follower growth, profile visits, daily/weekly trends
+  - Demographics: Follower breakdown by age, gender, country, city
+
+  **Example sub-queries**:
+  - "What are my top performing posts by engagement in the last 30 days?"
+  - "Show me follower demographics by age and gender"
+  - "How has my reach changed over the last 30 days?"
+  - "What content types (Reels vs Posts) perform better?"
+
+  ### Facebook/Instagram Ads Data (12 tables)
+  **What we have**:
+  - Campaign structure: Campaigns, ad sets, ads, creative details
+  - Performance metrics: Spend, impressions, clicks, conversions, ROAS, CPA
+  - Demographic breakdowns: Age, gender performance
+  - Platform/device breakdowns: Instagram vs Facebook, mobile vs desktop
+  - Geographic data: DMA-level performance
+
+  **Example sub-queries**:
+  - "Which campaigns have the highest ROAS this month?"
+  - "What is my total ad spend in the last 30 days?"
+  - "Show me demographic performance by age and gender"
+  - "Compare Instagram vs Facebook ad performance"
+
+  ### Google Analytics Data (8 tables)
+  **What we have**:
+  - Website traffic: Users, sessions, bounce rate, page views
+  - Traffic attribution: Sources, mediums, campaigns, channels
+  - E-commerce: Product performance, revenue, conversion tracking
+  - User behavior: Page paths, engagement time
+
+  **Example sub-queries**:
+  - "What are my top traffic sources in the last 30 days?"
+  - "Which products generated the most revenue this month?"
+  - "How has website traffic changed over time?"
+  - "Show me conversion rates by traffic source"
+
+  ---
+
+  ### Data We DON'T Have (avoid these in decomposition)
+
+  ❌ **Content analysis**: Topic classification, sentiment analysis, emotion detection, keyword extraction
+  ❌ **External data**: Competitor analysis, market trends, industry benchmarks, pricing comparisons
+  ❌ **Review platforms**: Customer reviews, ratings, feedback analysis
+  ❌ **Other platforms**: TikTok, Pinterest, LinkedIn, Twitter, Email, SMS campaigns
+  ❌ **Offline data**: In-store sales, offline conversions, foot traffic
+
+  ---
+
+  ### Decomposition Validation Checklist
+
+  Before finalizing sub-queries, verify each one:
+  1. ✅ Maps to an available data source listed above
+  2. ✅ Doesn't request unavailable data (sentiment, topics, competitors, reviews)
+  3. ✅ Uses compatible granularity (don't mix post-level with campaign-level)
+  4. ✅ Has non-overlapping intent (avoid querying same table/metrics repeatedly)
+  5. ✅ Is independently answerable (no external data needed)
+  6. ✅ Is specific about metrics (not vague like "analyze performance")
+
   ## Important Notes
 
   - Keep sub-queries focused and specific
