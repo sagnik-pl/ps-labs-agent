@@ -150,6 +150,36 @@ prompt: |
 
      **CRITICAL**: Use this ALGORITHMIC validation procedure to systematically check EVERY table:
 
+     **FIRST: Recognize VALID queries** - If the SQL already has these patterns, mark as VALID:
+
+     ✅ **VALID Example** - Deduplication present on BOTH tables:
+     ```sql
+     FROM instagram_media m
+     LEFT JOIN instagram_media_insights mi
+       ON m.id = mi.id
+       AND m.user_id = mi.user_id
+       AND mi.glue_processed_at = (  -- ✅ FILTER PRESENT
+           SELECT MAX(glue_processed_at)
+           FROM instagram_media_insights
+           WHERE user_id = '...'
+       )
+     WHERE m.glue_processed_at = (  -- ✅ FILTER PRESENT
+         SELECT MAX(glue_processed_at)
+         FROM instagram_media
+         WHERE user_id = '...'
+     )
+     ```
+     → This query is VALID. Both full refresh tables have filters. Pass this check.
+
+     ❌ **INVALID Example** - Missing filter on joined table:
+     ```sql
+     FROM instagram_media m
+     LEFT JOIN instagram_media_insights mi
+       ON m.id = mi.id AND m.user_id = mi.user_id  -- ❌ NO FILTER
+     WHERE m.glue_processed_at = (...)  -- Only main table has filter
+     ```
+     → This query is INVALID. instagram_media_insights is missing its filter.
+
      **Step 1: Parse ALL Tables from SQL**
      - Extract table name from FROM clause
      - Extract EVERY table name from JOIN clauses
@@ -164,12 +194,16 @@ prompt: |
      - For EACH full refresh table found in Step 2:
 
        **IF table is in FROM clause:**
-       - ✅ Check: WHERE clause contains `{{table}}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '...')`
-       - ❌ If missing → Mark is_valid: false
+       - ✅ LOOK FOR: WHERE clause contains `{{table}}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '...')`
+       - ✅ If FOUND → This table passes the check
+       - ❌ If NOT FOUND → Mark is_valid: false and list this table in critical_issues
 
        **IF table is in JOIN clause:**
-       - ✅ Check: JOIN ON clause contains `AND {{table}}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '...')`
-       - ❌ If missing → Mark is_valid: false
+       - ✅ LOOK FOR: JOIN ON clause contains `AND {{table}}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '...')`
+       - ✅ If FOUND → This table passes the check
+       - ❌ If NOT FOUND → Mark is_valid: false and list this table in critical_issues
+
+       **IMPORTANT**: Actually search for the filter in the SQL. Don't assume it's missing just because you see a full refresh table name!
 
      **Step 4: Report Results**
      - If ALL full refresh tables have filters → Pass this check
