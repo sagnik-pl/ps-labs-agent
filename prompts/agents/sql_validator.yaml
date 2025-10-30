@@ -278,15 +278,15 @@ prompt: |
 
   **Template for single table:**
   ```
-  Critical: Query uses full_refresh table '{table_name}' which contains duplicate records from multiple ETL runs. Without deduplication, this query will return inflated counts and duplicate data.
+  Critical: Query uses full_refresh table '{{table_name}}' which contains duplicate records from multiple ETL runs. Without deduplication, this query will return inflated counts and duplicate data.
 
   Add this WHERE clause:
   WHERE glue_processed_at = (
       SELECT MAX(glue_processed_at)
-      FROM {table_name}
-      WHERE user_id = '{user_id}'
+      FROM {{table_name}}
+      WHERE user_id = '{{user_id}}'
   )
-    AND user_id = '{user_id}'
+    AND user_id = '{{user_id}}'
 
   Why: Full refresh tables snapshot ALL data on every ETL run. The same records exist multiple times with different glue_processed_at timestamps. This filter ensures you get only the latest ETL run data.
   ```
@@ -297,23 +297,23 @@ prompt: |
 
   Required fixes:
   1. Add glue_processed_at filter for instagram_media in WHERE clause:
-     WHERE m.glue_processed_at = (SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}')
+     WHERE m.glue_processed_at = (SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{{user_id}}')
 
   2. Add glue_processed_at filter for instagram_media_insights in JOIN ON clause:
      LEFT JOIN instagram_media_insights mi
        ON m.id = mi.id AND m.user_id = mi.user_id
-       AND mi.glue_processed_at = (SELECT MAX(glue_processed_at) FROM instagram_media_insights WHERE user_id = '{user_id}')
+       AND mi.glue_processed_at = (SELECT MAX(glue_processed_at) FROM instagram_media_insights WHERE user_id = '{{user_id}}')
 
   Why: Both tables are full refresh and contain duplicates. Without these filters, each post will appear multiple times from different ETL runs.
   ```
 
   **Template for COUNT queries:**
   ```
-  Critical: COUNT query on full_refresh table '{table_name}' will return inflated results (2x-10x actual count) without deduplication filter.
+  Critical: COUNT query on full_refresh table '{{table_name}}' will return inflated results (2x-10x actual count) without deduplication filter.
 
   Add WHERE clause:
-  WHERE glue_processed_at = (SELECT MAX(glue_processed_at) FROM {table_name} WHERE user_id = '{user_id}')
-    AND user_id = '{user_id}'
+  WHERE glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table_name}} WHERE user_id = '{{user_id}}')
+    AND user_id = '{{user_id}}'
 
   Example: If you have 100 posts and 5 ETL runs, COUNT(*) will return 500 instead of 100 without this filter.
   ```

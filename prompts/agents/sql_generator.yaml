@@ -160,7 +160,7 @@ prompt: |
     LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
     LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id
     LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id
-    WHERE i.user_id = '{user_id}'
+    WHERE i.user_id = '{{user_id}}'
     GROUP BY c.campaign_name
     ```
 
@@ -177,7 +177,7 @@ prompt: |
       SUM(impressions) as impressions,
       SUM(clicks) as clicks
     FROM facebook_ads_insights_age_and_gender
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
     GROUP BY age, gender
     ```
 
@@ -232,7 +232,7 @@ prompt: |
       newUsers,
       sessions
     FROM ga_website_overview
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
       AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
     ORDER BY visit_date DESC
     ```
@@ -250,7 +250,7 @@ prompt: |
       SUM(sessions) as total_sessions,
       SUM(totalUsers) as total_users
     FROM ga_traffic_sources
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
       AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
     GROUP BY sessionDefaultChannelGroup, sessionSource, sessionMedium
     ORDER BY total_sessions DESC
@@ -267,7 +267,7 @@ prompt: |
       SUM(itemRevenue) as total_revenue,
       SUM(itemsPurchased) as units_sold
     FROM ga_item_report
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
       AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
     GROUP BY itemName
     ORDER BY total_revenue DESC
@@ -493,7 +493,7 @@ prompt: |
 
   Generate a SQL query that:
 
-  1. **CRITICAL**: Always filters by user_id = '{user_id}'
+  1. **CRITICAL**: Always filters by user_id = '{{user_id}}'
   2. Uses correct table and column names from the schema
   3. Answers the user's question completely
   4. Follows Athena/Presto SQL syntax
@@ -502,7 +502,7 @@ prompt: |
 
   ### Important Guidelines
 
-  - **User Isolation**: ALWAYS include `WHERE user_id = '{user_id}'`
+  - **User Isolation**: ALWAYS include `WHERE user_id = '{{user_id}}'`
   - **Time Window Default**: If the user's question does NOT specify a time period, date range, or timeframe:
     - ✅ DEFAULT to last 30 days - BUT use the CORRECT date column for each platform:
 
@@ -555,10 +555,10 @@ prompt: |
     ```sql
     WHERE glue_processed_at = (
         SELECT MAX(glue_processed_at)
-        FROM {table_name}
-        WHERE user_id = '{user_id}'
+        FROM {{table_name}}
+        WHERE user_id = '{{user_id}}'
     )
-      AND user_id = '{user_id}'
+      AND user_id = '{{user_id}}'
     ```
 
     **Why this is CRITICAL:**
@@ -572,7 +572,7 @@ prompt: |
     -- ❌ WRONG (returns duplicates from multiple ETL runs):
     SELECT id, timestamp, caption
     FROM instagram_media
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
       AND timestamp >= date_add('day', -30, current_date)
     ORDER BY timestamp DESC LIMIT 10
 
@@ -580,9 +580,9 @@ prompt: |
     SELECT id, timestamp, caption
     FROM instagram_media
     WHERE glue_processed_at = (
-        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{{user_id}}'
     )
-      AND user_id = '{user_id}'
+      AND user_id = '{{user_id}}'
       AND timestamp >= date_add('day', -30, current_date)
     ORDER BY timestamp DESC LIMIT 10
     ```
@@ -592,15 +592,15 @@ prompt: |
     -- ❌ WRONG (count is inflated):
     SELECT COUNT(*) as post_count
     FROM instagram_media
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
 
     -- ✅ CORRECT (accurate count):
     SELECT COUNT(*) as post_count
     FROM instagram_media
     WHERE glue_processed_at = (
-        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{{user_id}}'
     )
-      AND user_id = '{user_id}'
+      AND user_id = '{{user_id}}'
     ```
 
     **Example 3: JOIN of TWO full refresh tables**
@@ -620,14 +620,14 @@ prompt: |
       AND mi.glue_processed_at = (
           SELECT MAX(glue_processed_at)
           FROM instagram_media_insights
-          WHERE user_id = '{user_id}'
+          WHERE user_id = '{{user_id}}'
       )
     WHERE m.glue_processed_at = (
         SELECT MAX(glue_processed_at)
         FROM instagram_media
-        WHERE user_id = '{user_id}'
+        WHERE user_id = '{{user_id}}'
     )
-      AND m.user_id = '{user_id}'
+      AND m.user_id = '{{user_id}}'
       AND m.timestamp >= date_add('day', -30, current_date)
     ORDER BY m.timestamp DESC
     ```
@@ -647,9 +647,9 @@ prompt: |
       AND c.glue_processed_at = (
           SELECT MAX(glue_processed_at)
           FROM facebook_ad_creatives
-          WHERE user_id = '{user_id}'
+          WHERE user_id = '{{user_id}}'
       )
-    WHERE i.user_id = '{user_id}'
+    WHERE i.user_id = '{{user_id}}'
       AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY
     ```
 
@@ -773,7 +773,7 @@ prompt: |
   FROM instagram_media m
   JOIN instagram_media_insights i
     ON m.id = i.id AND m.user_id = i.user_id
-  WHERE m.user_id = '{user_id}'
+  WHERE m.user_id = '{{user_id}}'
     AND m.timestamp >= date_add('day', -30, current_date)
   ORDER BY m.timestamp DESC
   LIMIT 100
