@@ -5,7 +5,7 @@
 ### User ID Filtering (CRITICAL)
 ```sql
 -- ALWAYS filter by user_id - it's a partition column
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
 ```
 
 **Why**:
@@ -56,10 +56,10 @@ Without deduplication filtering:
 ```sql
 WHERE glue_processed_at = (
     SELECT MAX(glue_processed_at)
-    FROM {table_name}
-    WHERE user_id = '{user_id}'
+    FROM {{table_name}}
+    WHERE user_id = '{{user_id}}'
 )
-  AND user_id = '{user_id}'
+  AND user_id = '{{user_id}}'
 ```
 
 ---
@@ -72,7 +72,7 @@ WHERE glue_processed_at = (
 ```sql
 SELECT id, timestamp, caption
 FROM instagram_media
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND timestamp >= date_add('day', -30, current_date)
 ORDER BY timestamp DESC LIMIT 10;
 -- ❌ Returns duplicates - same 10 posts shown multiple times
@@ -83,9 +83,9 @@ ORDER BY timestamp DESC LIMIT 10;
 SELECT id, timestamp, caption
 FROM instagram_media
 WHERE glue_processed_at = (
-    SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+    SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{{user_id}}'
 )
-  AND user_id = '{user_id}'
+  AND user_id = '{{user_id}}'
   AND timestamp >= date_add('day', -30, current_date)
 ORDER BY timestamp DESC LIMIT 10;
 -- ✅ Returns unique 10 posts from latest ETL run
@@ -121,14 +121,14 @@ LEFT JOIN instagram_media_insights mi
   AND mi.glue_processed_at = (
       SELECT MAX(glue_processed_at)
       FROM instagram_media_insights
-      WHERE user_id = '{user_id}'
+      WHERE user_id = '{{user_id}}'
   )
 WHERE m.glue_processed_at = (
     SELECT MAX(glue_processed_at)
     FROM instagram_media
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
 )
-  AND m.user_id = '{user_id}'
+  AND m.user_id = '{{user_id}}'
   AND m.timestamp >= date_add('day', -30, current_date)
 ORDER BY m.timestamp DESC;
 ```
@@ -148,9 +148,9 @@ FROM instagram_user_lifetime_insights
 WHERE glue_processed_at = (
     SELECT MAX(glue_processed_at)
     FROM instagram_user_lifetime_insights
-    WHERE user_id = '{user_id}'
+    WHERE user_id = '{{user_id}}'
 )
-  AND user_id = '{user_id}';
+  AND user_id = '{{user_id}}';
 ```
 
 ---
@@ -172,9 +172,9 @@ LEFT JOIN facebook_ad_creatives c
   AND c.glue_processed_at = (
       SELECT MAX(glue_processed_at)
       FROM facebook_ad_creatives
-      WHERE user_id = '{user_id}'
+      WHERE user_id = '{{user_id}}'
   )
-WHERE i.user_id = '{user_id}'
+WHERE i.user_id = '{{user_id}}'
   AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY;
 ```
 
@@ -203,7 +203,7 @@ These tables add new records daily and are naturally unique:
 ```sql
 -- ❌ WRONG: Still returns duplicates if multiple ETL runs on same day
 SELECT * FROM instagram_media
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND year = '2025' AND month = '01' AND day = '30';
 ```
 
@@ -212,9 +212,9 @@ WHERE user_id = '{user_id}'
 -- ✅ CORRECT: Get latest ETL run data
 SELECT * FROM instagram_media
 WHERE glue_processed_at = (
-    SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+    SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{{user_id}}'
 )
-  AND user_id = '{user_id}';
+  AND user_id = '{{user_id}}';
 ```
 
 #### `instagram_media`
@@ -249,7 +249,7 @@ SELECT
 FROM instagram_media m
 LEFT JOIN instagram_media_insights mi
   ON m.id = mi.id AND m.user_id = mi.user_id
-WHERE m.user_id = '{user_id}'
+WHERE m.user_id = '{{user_id}}'
   AND m.timestamp >= date_add('day', -30, current_date)
 ORDER BY mi.reach DESC
 LIMIT 10
@@ -263,17 +263,17 @@ LIMIT 10
 **Common Mistakes to Avoid:**
 ```sql
 -- ❌ WRONG: Query instagram_media without time filter
-SELECT COUNT(*) FROM instagram_media WHERE user_id = '{user_id}'
+SELECT COUNT(*) FROM instagram_media WHERE user_id = '{{user_id}}'
 -- Returns ALL posts ever (not last 30 days)
 
 -- ❌ WRONG: Try to filter instagram_media_insights by timestamp
 SELECT * FROM instagram_media_insights
-WHERE user_id = '{user_id}' AND timestamp >= date_add('day', -30, current_date)
+WHERE user_id = '{{user_id}}' AND timestamp >= date_add('day', -30, current_date)
 -- ERROR: instagram_media_insights has NO timestamp column
 
 -- ❌ WRONG: Use partition columns for time filtering
 SELECT * FROM instagram_media_insights
-WHERE user_id = '{user_id}' AND year = '2025' AND month = '01'
+WHERE user_id = '{{user_id}}' AND year = '2025' AND month = '01'
 -- Returns insights processed in Jan 2025, NOT posts published in last 30 days
 ```
 
@@ -298,7 +298,7 @@ SELECT
 FROM instagram_media m
 JOIN instagram_media_insights i
   ON m.id = i.id AND m.user_id = i.user_id
-WHERE m.user_id = '{user_id}'
+WHERE m.user_id = '{{user_id}}'
   AND m.year = 2025
   AND m.month = 10
 ORDER BY m.timestamp DESC
@@ -315,7 +315,7 @@ SELECT
 FROM instagram_media m
 JOIN instagram_media_insights i
   ON m.id = i.id AND m.user_id = i.user_id
-WHERE m.user_id = '{user_id}'
+WHERE m.user_id = '{{user_id}}'
 ORDER BY engagement_rate DESC
 LIMIT 10
 ```
@@ -330,7 +330,7 @@ SELECT
 FROM instagram_media m
 JOIN instagram_media_insights i
   ON m.id = i.id AND m.user_id = i.user_id
-WHERE m.user_id = '{user_id}'
+WHERE m.user_id = '{{user_id}}'
 GROUP BY DATE_TRUNC('day', m.timestamp)
 ORDER BY date DESC
 ```
@@ -386,7 +386,7 @@ FROM facebook_ads_insights i
 LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
 LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
 LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND ads.user_id = c.user_id
-WHERE i.user_id = '{user_id}'
+WHERE i.user_id = '{{user_id}}'
   AND i.date_start >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY c.campaign_name
 ```
@@ -405,7 +405,7 @@ SELECT
   SUM(purchase_value) as total_revenue,
   SUM(purchase_value) / NULLIF(SUM(spend), 0) as roas
 FROM facebook_ads_insights
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND date_start >= CURRENT_DATE - INTERVAL '30' DAY
 ```
 
@@ -422,7 +422,7 @@ FROM facebook_ads_insights i
 LEFT JOIN facebook_ads a ON i.ad_id = a.id AND i.user_id = a.user_id
 LEFT JOIN facebook_ad_sets ads ON a.adset_id = ads.id AND a.user_id = ads.user_id
 LEFT JOIN facebook_campaigns c ON ads.campaign_id = c.id AND ads.user_id = c.user_id
-WHERE i.user_id = '{user_id}'
+WHERE i.user_id = '{{user_id}}'
   AND i.date_start >= CURRENT_DATE - INTERVAL '7' DAY
 GROUP BY c.campaign_name, c.status
 ORDER BY spend DESC
@@ -437,7 +437,7 @@ SELECT
   SUM(spend) as spend,
   SUM(impressions) as impressions
 FROM facebook_ads_insights_age_and_gender
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND date_start >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY age, gender
 ORDER BY spend DESC
@@ -492,7 +492,7 @@ SELECT
   engagementRate,
   bounceRate
 FROM ga_website_overview
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 ORDER BY visit_date DESC
 ```
@@ -505,7 +505,7 @@ SELECT
   SUM(totalUsers) as total_users,
   AVG(CAST(averageSessionDuration AS DOUBLE)) as avg_duration
 FROM ga_traffic_sources
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY sessionDefaultChannelGroup
 ORDER BY total_sessions DESC
@@ -519,7 +519,7 @@ SELECT
   SUM(itemsPurchased) as units_sold,
   SUM(itemRevenue) / NULLIF(SUM(itemsPurchased), 0) as avg_price
 FROM ga_item_report
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY itemName
 ORDER BY revenue DESC
@@ -534,7 +534,7 @@ SELECT
   SUM(screenPageViews) as total_views,
   AVG(CAST(averageEngagementTime AS DOUBLE)) as avg_engagement_time
 FROM ga_pages
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '7' DAY
 GROUP BY pageTitle, pagePath
 ORDER BY total_views DESC
@@ -562,10 +562,10 @@ LIMIT 20
 
 ```sql
 -- ✅ ALWAYS include user_id filter
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
 
 -- ✅ Optional: Add partition filters for better performance
-WHERE user_id = '{user_id}'
+WHERE user_id = '{{user_id}}'
   AND year = '2024'
   AND month = '10'
 ```

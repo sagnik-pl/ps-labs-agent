@@ -298,7 +298,7 @@ Always join Instagram tables on **BOTH** id AND user_id:
 FROM instagram_media m
 JOIN instagram_media_insights i
   ON m.id = i.id AND m.user_id = i.user_id  -- Both columns!
-WHERE m.user_id = '{user_id}'
+WHERE m.user_id = '{{user_id}}'
 ```
 
 ---
