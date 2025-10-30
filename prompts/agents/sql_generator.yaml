@@ -681,22 +681,22 @@ prompt: |
     **IF table is in FROM clause:**
     - ✅ Must have filter in WHERE clause:
       ```sql
-      WHERE {table}.glue_processed_at = (
+      WHERE {{table}}.glue_processed_at = (
           SELECT MAX(glue_processed_at)
-          FROM {table}
-          WHERE user_id = '{user_id}'
+          FROM {{table}}
+          WHERE user_id = '{{user_id}}'
       )
       ```
 
     **IF table is in JOIN clause:**
     - ✅ Must have filter in JOIN ON clause:
       ```sql
-      JOIN {table} t
+      JOIN {{table}} t
         ON ... [your join conditions]
         AND t.glue_processed_at = (
             SELECT MAX(glue_processed_at)
-            FROM {table}
-            WHERE user_id = '{user_id}'
+            FROM {{table}}
+            WHERE user_id = '{{user_id}}'
         )
       ```
 
@@ -722,10 +722,10 @@ prompt: |
     JOIN instagram_media_insights mi
       ON m.id = mi.id
       AND mi.glue_processed_at = (  -- ✅ mi has filter
-          SELECT MAX(glue_processed_at) FROM instagram_media_insights WHERE user_id = '{user_id}'
+          SELECT MAX(glue_processed_at) FROM instagram_media_insights WHERE user_id = '{{user_id}}'
       )
     WHERE m.glue_processed_at = (  -- ✅ m has filter
-        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{user_id}'
+        SELECT MAX(glue_processed_at) FROM instagram_media WHERE user_id = '{{user_id}}'
     )
     ```
 

@@ -164,11 +164,11 @@ prompt: |
      - For EACH full refresh table found in Step 2:
 
        **IF table is in FROM clause:**
-       - ✅ Check: WHERE clause contains `{table}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {table} WHERE user_id = '...')`
+       - ✅ Check: WHERE clause contains `{{table}}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '...')`
        - ❌ If missing → Mark is_valid: false
 
        **IF table is in JOIN clause:**
-       - ✅ Check: JOIN ON clause contains `AND {table}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {table} WHERE user_id = '...')`
+       - ✅ Check: JOIN ON clause contains `AND {{table}}.glue_processed_at = (SELECT MAX(glue_processed_at) FROM {{table}} WHERE user_id = '...')`
        - ❌ If missing → Mark is_valid: false
 
      **Step 4: Report Results**
@@ -185,16 +185,16 @@ prompt: |
      -- For FROM table:
      WHERE {table_alias}.glue_processed_at = (
          SELECT MAX(glue_processed_at)
-         FROM {table_name}
+         FROM {{table_name}}
          WHERE user_id = '{{user_id}}'
      )
 
      -- For JOIN table:
-     JOIN {table_name} {alias}
+     JOIN {{table_name}} {{alias}}
        ON ... [other conditions]
-       AND {alias}.glue_processed_at = (
+       AND {{alias}}.glue_processed_at = (
            SELECT MAX(glue_processed_at)
-           FROM {table_name}
+           FROM {{table_name}}
            WHERE user_id = '{{user_id}}'
        )
      ```
