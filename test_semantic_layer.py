@@ -311,12 +311,23 @@ async def send_query_and_display_response(
 
                     # Show query classification (single-intent vs multi-intent)
                     if classification:
-                        print(f"     {Colors.YELLOW}🔍 Query Classification:{Colors.END}")
-                        print(f"       Type: {Colors.BOLD}{classification.get('type', 'N/A')}{Colors.END}")
+                        query_type = classification.get('type', 'N/A')
+                        is_multi_intent = query_type == 'multi_intent'
+
+                        print()
+                        print(f"     {Colors.YELLOW}{'─'*68}{Colors.END}")
+                        print(f"     {Colors.YELLOW}{Colors.BOLD}🔍 QUERY CLASSIFICATION{Colors.END}")
+                        print(f"     {Colors.YELLOW}{'─'*68}{Colors.END}")
+
+                        # Highlight multi-intent in GREEN, single-intent in standard
+                        type_color = Colors.GREEN if is_multi_intent else Colors.YELLOW
+                        type_label = f"{type_color}{Colors.BOLD}{query_type.upper()}{Colors.END}"
+                        print(f"       Intent Type: {type_label}")
                         print(f"       Complexity: {classification.get('complexity', 'N/A')}")
-                        print(f"       Requires Decomposition: {classification.get('requires_decomposition', False)}")
+                        print(f"       Requires Decomposition: {Colors.BOLD}{classification.get('requires_decomposition', False)}{Colors.END}")
+
                         if classification.get('reasoning'):
-                            print(f"       Reasoning: {classification.get('reasoning')[:200]}")
+                            print(f"       Reasoning: {classification.get('reasoning')[:250]}")
 
                     # Show decomposition details (CRITICAL for multi-intent queries)
                     if decomposition and decomposition.get('sub_queries'):
@@ -324,24 +335,35 @@ async def send_query_and_display_response(
                         original_goal = decomposition.get('original_goal', 'N/A')
 
                         print()
-                        print(f"     {Colors.GREEN}{Colors.BOLD}🎯 MULTI-INTENT QUERY DECOMPOSITION:{Colors.END}")
-                        print(f"     {Colors.GREEN}Original Goal: {original_goal}{Colors.END}")
-                        print(f"     {Colors.GREEN}Breaking into {len(sub_queries)} sub-queries:{Colors.END}")
+                        print(f"     {Colors.GREEN}{Colors.BOLD}{'='*68}{Colors.END}")
+                        print(f"     {Colors.GREEN}{Colors.BOLD}🎯 MULTI-INTENT QUERY BREAKDOWN{Colors.END}")
+                        print(f"     {Colors.GREEN}{Colors.BOLD}{'='*68}{Colors.END}")
+                        print()
+                        print(f"     {Colors.GREEN}{Colors.BOLD}Original Goal:{Colors.END}")
+                        print(f"     {Colors.GREEN}» {original_goal}{Colors.END}")
+                        print()
+                        print(f"     {Colors.GREEN}{Colors.BOLD}Decomposed into {len(sub_queries)} simpler question(s):{Colors.END}")
                         print()
 
-                        for sq in sub_queries:
+                        for idx, sq in enumerate(sub_queries, 1):
                             sq_id = sq.get('id', 'N/A')
                             question = sq.get('question', 'N/A')
                             intent = sq.get('intent', 'N/A')
                             deps = sq.get('dependencies', [])
                             exec_order = sq.get('execution_order', 0)
 
-                            print(f"       {Colors.BOLD}{sq_id}{Colors.END}: {question}")
-                            print(f"          Intent: {intent}")
-                            print(f"          Execution Order: {exec_order}")
+                            print(f"     {Colors.CYAN}{'─'*68}{Colors.END}")
+                            print(f"     {Colors.BOLD}{Colors.CYAN}Question {idx}: {sq_id}{Colors.END}")
+                            print(f"     {Colors.CYAN}{'─'*68}{Colors.END}")
+                            print(f"       {Colors.BOLD}❓ Query:{Colors.END} {question}")
+                            print(f"       {Colors.BOLD}🎯 Intent:{Colors.END} {Colors.GREEN}{intent}{Colors.END}")
+                            print(f"       {Colors.BOLD}📋 Execution Order:{Colors.END} {exec_order}")
                             if deps:
-                                print(f"          Dependencies: {deps}")
+                                print(f"       {Colors.BOLD}🔗 Dependencies:{Colors.END} {', '.join(deps)}")
                             print()
+
+                        print(f"     {Colors.GREEN}{Colors.BOLD}{'='*68}{Colors.END}")
+                        print()
 
                     if routing:
                         print(f"     {Colors.YELLOW}🔀 Routing Decision:{Colors.END}")
