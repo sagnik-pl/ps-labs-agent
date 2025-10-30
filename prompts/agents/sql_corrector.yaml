@@ -69,25 +69,25 @@ prompt: |
 
   **Response**:
   ```json
-  {
+  {{
     "error_category": "COLUMN_ERROR",
     "specific_issues": [
-      {
+      {{
         "issue": "Column 'saves' does not exist in instagram_media_insights table",
         "location": "SELECT clause",
         "reason": "Common naming mistake - column is named 'saved' not 'saves'"
-      }
+      }}
     ],
     "fix_recommendations": [
-      {
+      {{
         "step": 1,
         "action": "Replace 'i.saves' with 'i.saved' in the SELECT clause",
         "reasoning": "The correct column name in instagram_media_insights is 'saved' (past tense), not 'saves'",
         "corrected_snippet": "SELECT i.saved FROM instagram_media_insights i"
-      }
+      }}
     ],
     "summary": "Simple column name typo - use 'saved' instead of 'saves'"
-  }
+  }}
   ```
 
   ### Example 2: Missing Required Filter
@@ -101,25 +101,25 @@ prompt: |
 
   **Response**:
   ```json
-  {
+  {{
     "error_category": "FILTER_ERROR",
     "specific_issues": [
-      {
+      {{
         "issue": "Missing user_id filter in WHERE clause",
         "location": "WHERE clause (missing)",
         "reason": "All queries must filter by user_id for data isolation"
-      }
+      }}
     ],
     "fix_recommendations": [
-      {
+      {{
         "step": 1,
         "action": "Add WHERE clause with user_id filter",
         "reasoning": "User isolation is critical - must filter by user_id = 'user123'",
         "corrected_snippet": "SELECT * FROM instagram_media WHERE user_id = 'user123' ORDER BY timestamp DESC LIMIT 10"
-      }
+      }}
     ],
     "summary": "Add mandatory user_id filter to WHERE clause"
-  }
+  }}
   ```
 
   ### Example 3: Multiple Issues
@@ -133,47 +133,47 @@ prompt: |
 
   **Response**:
   ```json
-  {
+  {{
     "error_category": "MULTIPLE",
     "specific_issues": [
-      {
+      {{
         "issue": "Missing user_id filter in WHERE clause",
         "location": "WHERE clause",
         "reason": "User isolation required for all queries"
-      },
-      {
+      }},
+      {{
         "issue": "Column 'saves' does not exist",
         "location": "SELECT clause",
         "reason": "Column is named 'saved' not 'saves'"
-      },
-      {
+      }},
+      {{
         "issue": "JOIN missing user_id condition",
         "location": "JOIN clause",
         "reason": "Instagram JOINs should include both id AND user_id for correctness"
-      }
+      }}
     ],
     "fix_recommendations": [
-      {
+      {{
         "step": 1,
         "action": "Fix column name from 'i.saves' to 'i.saved'",
         "reasoning": "Correct column name is 'saved'",
         "corrected_snippet": "SELECT m.id, i.saved"
-      },
-      {
+      }},
+      {{
         "step": 2,
         "action": "Add user_id to JOIN condition",
         "reasoning": "Better JOIN accuracy with both keys",
         "corrected_snippet": "JOIN instagram_media_insights i ON m.id = i.id AND m.user_id = i.user_id"
-      },
-      {
+      }},
+      {{
         "step": 3,
         "action": "Add user_id filter to WHERE clause",
         "reasoning": "Required for user isolation",
         "corrected_snippet": "WHERE m.user_id = 'user123' AND m.timestamp >= date_add('day', -30, current_date)"
-      }
+      }}
     ],
     "summary": "Fix column name, improve JOIN condition, add user_id filter"
-  }
+  }}
   ```
 
   ## Response Format
@@ -181,25 +181,25 @@ prompt: |
   Respond with ONLY a JSON object:
 
   ```json
-  {
+  {{
     "error_category": "SYNTAX_ERROR | COLUMN_ERROR | FILTER_ERROR | JOIN_ERROR | LOGIC_ERROR | COMPLEXITY_ERROR | MULTIPLE",
     "specific_issues": [
-      {
+      {{
         "issue": "What is wrong",
         "location": "Where in the query",
         "reason": "Why it's wrong"
-      }
+      }}
     ],
     "fix_recommendations": [
-      {
+      {{
         "step": 1,
         "action": "What to change",
         "reasoning": "Why this fixes it",
         "corrected_snippet": "Code snippet with fix applied"
-      }
+      }}
     ],
     "summary": "One-line summary of the fixes needed"
-  }
+  }}
   ```
 
   ## Important Guidelines
