@@ -73,14 +73,14 @@ WHERE m.user_id = 'user123'
 - `facebook_dma_insights`
 
 **Google Analytics Tables (8):**
-- `ga_website_overview`
-- `ga_daily_active_users`
-- `ga_pages`
-- `ga_pages_path_report`
-- `ga_traffic_sources`
-- `ga_traffic_acquisition_session_medium`
-- `ga_traffic_acquisition_session_source`
-- `ga_item_report`
+- `google_analytics_website_overview`
+- `google_analytics_daily_active_users`
+- `google_analytics_pages`
+- `google_analytics_pages_path_report`
+- `google_analytics_traffic_sources`
+- `google_analytics_traffic_acquisition_session_medium`
+- `google_analytics_traffic_acquisition_session_source`
+- `google_analytics_item_report`
 
 **Validation**:
 - Has schema been checked?
@@ -299,7 +299,7 @@ WHERE user_id = 'user123'
 
 ❌ **WRONG**:
 ```sql
-SELECT * FROM ga_website_overview
+SELECT * FROM google_analytics_website_overview
 WHERE date >= CURRENT_DATE - INTERVAL '30' DAY
 -- ERROR: GA 'date' is STRING (yyyyMMdd), not DATE type
 ```
@@ -307,12 +307,12 @@ WHERE date >= CURRENT_DATE - INTERVAL '30' DAY
 ✅ **Fix**:
 ```sql
 -- Option 1: Parse date string to date type
-SELECT * FROM ga_website_overview
+SELECT * FROM google_analytics_website_overview
 WHERE user_id = 'user123'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 
 -- Option 2: String comparison
-SELECT * FROM ga_website_overview
+SELECT * FROM google_analytics_website_overview
 WHERE user_id = 'user123'
   AND date >= '20240101'
 ```
@@ -573,7 +573,7 @@ SELECT
   itemName,
   SUM(itemRevenue) as total_revenue,
   SUM(itemsPurchased) as units_sold
-FROM ga_item_report
+FROM google_analytics_item_report
 WHERE user_id = 'user123'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY itemName
@@ -585,7 +585,7 @@ LIMIT 20
 - ✅ Has user_id filter
 - ✅ Correct date parsing (date_parse for yyyyMMdd format)
 - ✅ Proper aggregation with GROUP BY
-- ✅ Correct table (ga_item_report for ecommerce)
+- ✅ Correct table (google_analytics_item_report for ecommerce)
 - ✅ Has LIMIT for performance
 
 **Result**: VALID ✓

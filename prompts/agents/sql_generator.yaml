@@ -192,37 +192,37 @@ prompt: |
   What aspect of the website are you analyzing?
     │
     ├─ OVERALL SITE PERFORMANCE (high-level metrics)
-    │  └─ Use: ga_website_overview (users, sessions, bounce rate, engagement)
+    │  └─ Use: google_analytics_website_overview (users, sessions, bounce rate, engagement)
     │
     ├─ USER ACTIVITY (active users, retention)
-    │  └─ Use: ga_daily_active_users (DAU, WAU, MAU metrics)
+    │  └─ Use: google_analytics_daily_active_users (DAU, WAU, MAU metrics)
     │
     ├─ TRAFFIC SOURCES (where visitors come from)
-    │  ├─ General sources: ga_traffic_sources (channel, source, medium)
-    │  ├─ By medium: ga_traffic_acquisition_session_medium (paid, organic, referral, etc.)
-    │  └─ By source: ga_traffic_acquisition_session_source (google, facebook, direct, etc.)
+    │  ├─ General sources: google_analytics_traffic_sources (channel, source, medium)
+    │  ├─ By medium: google_analytics_traffic_acquisition_session_medium (paid, organic, referral, etc.)
+    │  └─ By source: google_analytics_traffic_acquisition_session_source (google, facebook, direct, etc.)
     │
     ├─ PAGE/CONTENT PERFORMANCE (which pages perform best)
-    │  ├─ Page-level: ga_pages (page views, engagement by page)
-    │  └─ Path analysis: ga_pages_path_report (full URL path breakdown)
+    │  ├─ Page-level: google_analytics_pages (page views, engagement by page)
+    │  └─ Path analysis: google_analytics_pages_path_report (full URL path breakdown)
     │
     └─ ECOMMERCE/PRODUCTS (product sales and revenue)
-       └─ Use: ga_item_report (item revenue, purchases, quantity sold)
+       └─ Use: google_analytics_item_report (item revenue, purchases, quantity sold)
   ```
 
   **Key Guidelines**:
   - ✅ CRITICAL: ALL GA tables use `date` column in **yyyyMMdd STRING format**
   - ✅ MUST use `date_parse(date, '%Y%m%d')` for date filtering
-  - ✅ For overview metrics: `ga_website_overview`
-  - ✅ For traffic analysis: `ga_traffic_sources` or specific acquisition tables
-  - ✅ For ecommerce: `ga_item_report`
-  - ✅ For page performance: `ga_pages` or `ga_pages_path_report`
+  - ✅ For overview metrics: `google_analytics_website_overview`
+  - ✅ For traffic analysis: `google_analytics_traffic_sources` or specific acquisition tables
+  - ✅ For ecommerce: `google_analytics_item_report`
+  - ✅ For page performance: `google_analytics_pages` or `google_analytics_pages_path_report`
   - ✅ Column names use camelCase (e.g., `totalUsers`, `newUsers`, `engagementRate`)
   - ❌ Don't forget date parsing - dates are STRINGS, not DATE types
 
   **Example 1: Website Traffic Overview**
   - Question: "How many users visited my site last month?"
-  - Selected table: `ga_website_overview`
+  - Selected table: `google_analytics_website_overview`
   - Granularity: Property-level daily
   - SQL Pattern:
     ```sql
@@ -231,7 +231,7 @@ prompt: |
       totalUsers,
       newUsers,
       sessions
-    FROM ga_website_overview
+    FROM google_analytics_website_overview
     WHERE user_id = '{{user_id}}'
       AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
     ORDER BY visit_date DESC
@@ -239,7 +239,7 @@ prompt: |
 
   **Example 2: Top Traffic Sources**
   - Question: "What are my top traffic sources?"
-  - Selected table: `ga_traffic_sources`
+  - Selected table: `google_analytics_traffic_sources`
   - Granularity: Daily by channel/source/medium
   - SQL Pattern:
     ```sql
@@ -249,7 +249,7 @@ prompt: |
       sessionMedium,
       SUM(sessions) as total_sessions,
       SUM(totalUsers) as total_users
-    FROM ga_traffic_sources
+    FROM google_analytics_traffic_sources
     WHERE user_id = '{{user_id}}'
       AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
     GROUP BY sessionDefaultChannelGroup, sessionSource, sessionMedium
@@ -258,7 +258,7 @@ prompt: |
 
   **Example 3: Top Products**
   - Question: "What are my top-selling products this month?"
-  - Selected table: `ga_item_report`
+  - Selected table: `google_analytics_item_report`
   - Granularity: Daily by item/product
   - SQL Pattern:
     ```sql
@@ -266,7 +266,7 @@ prompt: |
       itemName,
       SUM(itemRevenue) as total_revenue,
       SUM(itemsPurchased) as units_sold
-    FROM ga_item_report
+    FROM google_analytics_item_report
     WHERE user_id = '{{user_id}}'
       AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
     GROUP BY itemName
@@ -656,7 +656,7 @@ prompt: |
     **Incremental tables that DO NOT need this filter:**
     - facebook_ads_insights (unique by ad_id + date_start)
     - facebook_ads_insights_* (all breakdown tables)
-    - ga_* (all Google Analytics tables, unique by date)
+    - google_analytics_* (all Google Analytics tables, unique by date)
     - instagram_user_insights (daily snapshots, unique by date)
 
     ---
@@ -673,7 +673,7 @@ prompt: |
     ### Step 2: Identify Full Refresh Tables
     For EACH table from Step 1, check if it's full refresh:
     - ✅ Full Refresh (needs filter): instagram_media, instagram_media_insights, instagram_user_lifetime_insights, instagram_users, facebook_ad_creatives
-    - ❌ Incremental (no filter needed): facebook_ads_insights, ga_*, instagram_user_insights, all other tables
+    - ❌ Incremental (no filter needed): facebook_ads_insights, google_analytics_*, instagram_user_insights, all other tables
 
     ### Step 3: Verify Deduplication Filter for EACH Full Refresh Table
     For EACH full refresh table identified in Step 2:
@@ -749,9 +749,9 @@ prompt: |
       * Use 'date' column in yyyyMMdd STRING format (e.g., "20240115")
       * MUST use date_parse() for filtering: `date_parse(date, '%Y%m%d')`
       * Example: `WHERE date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY`
-    - ga_website_overview: High-level site metrics
-    - ga_traffic_sources: Traffic source analysis
-    - ga_item_report: Ecommerce product performance
+    - google_analytics_website_overview: High-level site metrics
+    - google_analytics_traffic_sources: Traffic source analysis
+    - google_analytics_item_report: Ecommerce product performance
     - Column names use camelCase: totalUsers, newUsers, engagementRate, etc.
   - **Cross-Table JOINs** (CRITICAL - Always join on BOTH keys):
     * **Instagram**: When joining instagram_media with instagram_media_insights,

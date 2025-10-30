@@ -814,7 +814,7 @@ class SemanticLayer:
             AVAILABLE_PLATFORMS.append('Instagram')
         if any('meta' in table or 'facebook' in table for table in available_tables):
             AVAILABLE_PLATFORMS.append('Meta Ads (Facebook/Instagram Ads)')
-        if any(table.startswith('ga_') or 'google_analytics' in table for table in available_tables):
+        if any(table.startswith('google_analytics_') or 'google_analytics' in table for table in available_tables):
             AVAILABLE_PLATFORMS.append('Google Analytics (Website & E-commerce)')
 
         # Check for unavailable platform mentions

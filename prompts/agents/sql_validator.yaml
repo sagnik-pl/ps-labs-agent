@@ -220,7 +220,7 @@ prompt: |
      **Step 2: Identify Full Refresh Tables**
      - For EACH table in your list, check if it's full refresh:
        - ✅ Full Refresh: instagram_media, instagram_media_insights, instagram_user_lifetime_insights, instagram_users, facebook_ad_creatives
-       - ❌ Incremental: facebook_ads_insights, facebook_ads_insights_*, ga_*, instagram_user_insights (skip these)
+       - ❌ Incremental: facebook_ads_insights, facebook_ads_insights_*, google_analytics_*, instagram_user_insights (skip these)
 
      **Step 3: Verify Deduplication Filter for EACH Full Refresh Table**
      - For EACH full refresh table found in Step 2:

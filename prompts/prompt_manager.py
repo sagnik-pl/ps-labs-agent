@@ -1,7 +1,7 @@
 """
 Prompt management system for agent prompts and knowledge bases.
 
-Cache Version: 2025-10-30-v3 (Force reload after validator false negative fix)
+Cache Version: 2025-10-30-v4 (Force reload after GA table rename from ga_* to google_analytics_*)
 """
 from typing import Dict, Any, Optional
 from pathlib import Path

@@ -187,7 +187,7 @@ WHERE i.user_id = '{{user_id}}'
 These tables add new records daily and are naturally unique:
 - ✅ `facebook_ads_insights` (unique by ad_id + date_start)
 - ✅ All `facebook_ads_insights_*` breakdown tables
-- ✅ All `ga_*` Google Analytics tables (unique by date)
+- ✅ All `google_analytics_*` Google Analytics tables (unique by date)
 - ✅ `instagram_user_insights` (daily snapshots, unique by date)
 
 ---
@@ -490,14 +490,14 @@ ORDER BY spend DESC
 - One row per date + dimension combination
 
 **Key Tables:**
-- ga_website_overview (high-level site metrics)
-- ga_daily_active_users (user activity metrics)
-- ga_pages (page-level performance)
-- ga_pages_path_report (page path analysis)
-- ga_traffic_sources (traffic source attribution)
-- ga_traffic_acquisition_session_medium (medium breakdown)
-- ga_traffic_acquisition_session_source (source breakdown)
-- ga_item_report (ecommerce product performance)
+- google_analytics_website_overview (high-level site metrics)
+- google_analytics_daily_active_users (user activity metrics)
+- google_analytics_pages (page-level performance)
+- google_analytics_pages_path_report (page path analysis)
+- google_analytics_traffic_sources (traffic source attribution)
+- google_analytics_traffic_acquisition_session_medium (medium breakdown)
+- google_analytics_traffic_acquisition_session_source (source breakdown)
+- google_analytics_item_report (ecommerce product performance)
 
 #### Date Column Format
 
@@ -526,7 +526,7 @@ SELECT
   sessions,
   engagementRate,
   bounceRate
-FROM ga_website_overview
+FROM google_analytics_website_overview
 WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 ORDER BY visit_date DESC
@@ -539,7 +539,7 @@ SELECT
   SUM(sessions) as total_sessions,
   SUM(totalUsers) as total_users,
   AVG(CAST(averageSessionDuration AS DOUBLE)) as avg_duration
-FROM ga_traffic_sources
+FROM google_analytics_traffic_sources
 WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY sessionDefaultChannelGroup
@@ -553,7 +553,7 @@ SELECT
   SUM(itemRevenue) as revenue,
   SUM(itemsPurchased) as units_sold,
   SUM(itemRevenue) / NULLIF(SUM(itemsPurchased), 0) as avg_price
-FROM ga_item_report
+FROM google_analytics_item_report
 WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '30' DAY
 GROUP BY itemName
@@ -568,7 +568,7 @@ SELECT
   pagePath,
   SUM(screenPageViews) as total_views,
   AVG(CAST(averageEngagementTime AS DOUBLE)) as avg_engagement_time
-FROM ga_pages
+FROM google_analytics_pages
 WHERE user_id = '{{user_id}}'
   AND date_parse(date, '%Y%m%d') >= CURRENT_DATE - INTERVAL '7' DAY
 GROUP BY pageTitle, pagePath

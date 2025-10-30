@@ -2225,7 +2225,7 @@ tables:
   # GOOGLE ANALYTICS TABLES
   # ========================================
 
-  ga_website_overview:
+  google_analytics_website_overview:
     stream_type: "google_analytics"
     stream_name: "website_overview"
     description: "Google Analytics 4 high-level website performance metrics including user behavior, session data, and engagement metrics. Updated incrementally with daily snapshots. Contains property-level aggregated metrics. NO breakdown dimensions - this is the base overview table."
@@ -2387,7 +2387,7 @@ tables:
     - "Date format: yyyyMMdd (e.g., 20240115)"
     - "Bounce rate is decimal (0.5 = 50%)"
 
-  ga_daily_active_users:
+  google_analytics_daily_active_users:
     stream_type: "google_analytics"
     stream_name: "daily_active_users"
     description: "Google Analytics 4 daily active users metrics at property level. Updated incrementally. Contains simple daily active user counts."
@@ -2487,7 +2487,7 @@ tables:
     - "ALWAYS filter by user_id"
     - "INCREMENTAL - partitioned by date"
 
-  ga_pages:
+  google_analytics_pages:
     stream_type: "google_analytics"
     stream_name: "pages"
     description: "Google Analytics 4 page-level performance metrics including views and bounce rates. Updated incrementally. Contains metrics broken down by page path and hostname."
@@ -2618,7 +2618,7 @@ tables:
     - "INCREMENTAL - partitioned by date"
     - "Page path is searchable for URL filtering"
 
-  ga_traffic_sources:
+  google_analytics_traffic_sources:
     stream_type: "google_analytics"
     stream_name: "traffic_sources"
     description: "Google Analytics 4 traffic source attribution and performance data broken down by source and medium. Updated incrementally. Contains user acquisition, session behavior, and engagement metrics."
@@ -2801,7 +2801,7 @@ tables:
     - "INCREMENTAL - partitioned by date"
     - "Combine source + medium for attribution analysis"
 
-  ga_item_report:
+  google_analytics_item_report:
     stream_type: "google_analytics"
     stream_name: "item_report"
     description: "Google Analytics 4 e-commerce item/product performance metrics. Updated incrementally. Contains sales, revenue, and product-level metrics."
@@ -2893,7 +2893,7 @@ tables:
     - "ALWAYS filter by user_id"
     - "INCREMENTAL - partitioned by date"
 
-  ga_pages_path_report:
+  google_analytics_pages_path_report:
     stream_type: "google_analytics"
     stream_name: "pages_path_report"
     description: "Google Analytics 4 page path performance report with detailed path-level metrics. Updated incrementally."
@@ -2984,7 +2984,7 @@ tables:
     - "ALWAYS filter by user_id"
     - "INCREMENTAL - partitioned by date"
 
-  ga_traffic_acquisition_session_medium:
+  google_analytics_traffic_acquisition_session_medium:
     stream_type: "google_analytics"
     stream_name: "traffic_acquisition_session_medium"
     description: "Google Analytics 4 traffic acquisition metrics broken down by session medium (organic, cpc, referral, etc.). Updated incrementally."
@@ -3089,7 +3089,7 @@ tables:
     - "ALWAYS filter by user_id"
     - "INCREMENTAL - partitioned by date"
 
-  ga_traffic_acquisition_session_source:
+  google_analytics_traffic_acquisition_session_source:
     stream_type: "google_analytics"
     stream_name: "traffic_acquisition_session_source"
     description: "Google Analytics 4 traffic acquisition metrics broken down by session source (google, facebook, direct, etc.). Updated incrementally."
