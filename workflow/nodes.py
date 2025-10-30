@@ -1074,7 +1074,7 @@ class WorkflowNodes:
         formatted = []
         for sq_id, result in sub_results.items():
             status_icon = "✅" if result["execution_status"] == "success" else "❌"
-            formatted.append(f"\n{status_icon} **{sq_id}**: {result['question']}")
+            formatted.append(f"\n{status_icon} {result['question']}")
             formatted.append(f"   Intent: {result['intent']}")
             formatted.append(f"   Status: {result['execution_status']}")
 
@@ -1268,6 +1268,12 @@ class WorkflowNodes:
             # If there's more context from agent_results, add it
             agent_results = state.get("agent_results", {})
             error_category = agent_results.get("error_category", "unknown")
+            generated_sql = agent_results.get("sql_query", "")
+
+            # Add SQL for debugging in error scenarios
+            if error_category in ["sql_syntax", "data_not_found", "timeout", "unknown"] and generated_sql:
+                error_response += "\n\n**Your query couldn't be processed now.**"
+                error_response += f"\n\n<details>\n<summary>Technical details (for debugging)</summary>\n\n```sql\n{generated_sql}\n```\n</details>"
 
             # Add helpful suggestions based on error category
             if error_category == "data_not_found":
@@ -1360,7 +1366,7 @@ You must STITCH TOGETHER findings from all sub-queries into ONE comprehensive, c
 
 4. **Cross-Reference Findings**:
    - Reference findings across sub-queries explicitly
-   - Example: "Your low engagement (sq_1: 2.8%) is likely caused by inconsistent posting (sq_2: only 6 posts/month vs recommended 12-15)"
+   - Example: "Your low engagement (2.8%) is likely caused by inconsistent posting—only 6 posts/month vs recommended 12-15"
    - Show cause-and-effect relationships
 
 5. **Unified Recommendations**:
@@ -1370,11 +1376,11 @@ You must STITCH TOGETHER findings from all sub-queries into ONE comprehensive, c
 
 **Example of Good vs Bad Synthesis**:
 
-❌ **BAD** (just listing sub-query results):
-- sq_1: Your engagement is 2.8%
-- sq_2: You posted 6 times this month
-- sq_3: Your reach is 8,000
-- sq_4: You gained 50 followers
+❌ **BAD** (just listing findings separately):
+- Your engagement is 2.8%
+- You posted 6 times this month
+- Your reach is 8,000
+- You gained 50 followers
 
 ✅ **GOOD** (stitching together):
 "Your Instagram performance shows a critical pattern: despite decent reach (8K), your engagement is below benchmark (2.8% vs 3.5% industry avg), which directly stems from inconsistent posting—only 6 posts this month versus the recommended 12-15. This infrequent posting not only hurts engagement but also limits follower growth (50 new followers is 40% below potential). The solution: increase posting frequency to 3-4x/week with high-quality content to simultaneously boost engagement, reach, and follower acquisition."
@@ -2300,7 +2306,7 @@ This query is part of a larger multi-intent question that was decomposed into fo
                         error_category = "unknown"
                         user_message = "An error occurred while retrieving your data. Our team has been notified."
 
-                    error_msg = f"Error executing SQL query: {error_details}\n\nQuery:\n{generated_sql}"
+                    error_msg = f"Error executing SQL query: {error_details}"
 
                     return {
                         "user_id": user_id,  # CRITICAL: Maintain user_id for data isolation
