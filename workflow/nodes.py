@@ -1873,6 +1873,50 @@ This query is part of a larger multi-intent question that was decomposed into fo
             "messages": [AIMessage(content=f"Generated SQL query using intelligent table selection")],
         }
 
+    def _get_schema_context_for_validation(self, sql: str) -> str:
+        """
+        Extract schema context for tables used in SQL.
+        Helps validator understand table purposes and column meanings.
+
+        Args:
+            sql: SQL query to extract table names from
+
+        Returns:
+            Formatted schema context string with table descriptions and columns
+        """
+        import re
+        from utils.semantic_layer import semantic_layer
+
+        # Extract table names from SQL (FROM and JOIN clauses)
+        table_pattern = r'(?:FROM|JOIN)\s+([a-z_]+)'
+        tables = re.findall(table_pattern, sql, re.IGNORECASE)
+
+        if not tables:
+            return "No tables found in SQL"
+
+        # Get schema snippets for these tables
+        schema_context = []
+        for table in set(tables):
+            try:
+                table_schema = semantic_layer.get_table_schema(table)
+                if table_schema:
+                    schema_context.append(f"**Table: {table}**")
+                    schema_context.append(f"Description: {table_schema.get('description', 'N/A')}")
+
+                    # Get columns
+                    columns = semantic_layer.list_table_columns(table)
+                    if columns:
+                        schema_context.append(f"Columns: {', '.join(columns[:20])}")  # Limit to first 20
+                        if len(columns) > 20:
+                            schema_context.append(f"... and {len(columns) - 20} more columns")
+
+                    schema_context.append("")  # Blank line between tables
+            except Exception as e:
+                schema_context.append(f"**Table: {table}** - Error loading schema: {str(e)}")
+                schema_context.append("")
+
+        return "\n".join(schema_context)
+
     def sql_validator_node(self, state: AgentState) -> Dict[str, Any]:
         """
         Validate generated SQL query with complexity analysis.
@@ -1941,51 +1985,9 @@ This query is part of a larger multi-intent question that was decomposed into fo
         if missing_filters:
             logger.warning(f"Missing required filters: {missing_filters}")
 
-        # ========== STEP 4: Semantic Layer Validation ==========
-        semantic_validation = []
-
-        # Check for 'saves' vs 'saved' error and other column issues
-        if "instagram" in query.lower():
-            # Validate instagram_media_insights columns
-            validation_result = semantic_layer.validate_sql_columns(
-                generated_sql,
-                "instagram_media_insights"
-            )
-
-            if validation_result.get('invalid'):
-                invalid_cols = validation_result['invalid']
-                suggestions = validation_result.get('suggestions', {})
-                logger.warning(f"Invalid columns detected: {invalid_cols}")
-
-                error_msg = f"⚠️ COLUMN ERROR: Found invalid columns: {', '.join(invalid_cols)}."
-
-                # Add specific suggestions if available
-                if suggestions:
-                    corrections = [f"'{wrong}' → '{correct}'" for wrong, correct in suggestions.items()]
-                    error_msg += f" Did you mean: {', '.join(corrections)}?"
-                else:
-                    error_msg += " Check schema carefully. Common mistake: use 'saved' not 'saves'."
-
-                semantic_validation.append(error_msg)
-
-        # ========== EARLY RETURN: Invalid Columns Detected ==========
-        # If semantic layer detected invalid columns, immediately fail validation
-        # Don't rely on LLM validator - semantic layer is authoritative
-        if semantic_validation:
-            logger.warning(f"⚠️ SQL validation failed, retrying...")
-            return {
-                "sql_validation": {
-                    "is_valid": False,
-                    "validation_score": 0,
-                    "feedback": "\n".join(semantic_validation),
-                    "reasoning": "Invalid columns detected by semantic layer"
-                },
-                "sql_validation_feedback": "\n".join(semantic_validation),
-                "sql_retry_count": state.get("sql_retry_count", 0) + 1,
-                "next_step": "retry_sql"
-            }
-
-        # ========== STEP 5: Compile Validation Feedback ==========
+        # ========== STEP 4: Compile Validation Context ==========
+        # NOTE: Column validation is now handled by the LLM validator with full schema context
+        # The validator will check columns against the correct tables used in the SQL
         feedback_parts = []
 
         # Add complexity report
@@ -1997,10 +1999,6 @@ This query is part of a larger multi-intent question that was decomposed into fo
             feedback_parts.append(f"\n⚠️ **Missing Required Filters**:\n" +
                                  "\n".join(f"  - {f}" for f in missing_filters))
 
-        # Add semantic validation
-        if semantic_validation:
-            feedback_parts.append("\n" + "\n".join(semantic_validation))
-
         # Add high complexity warning
         if complexity['score'] >= 7:
             feedback_parts.append(
@@ -2008,18 +2006,21 @@ This query is part of a larger multi-intent question that was decomposed into fo
                 "Consider simplifying or using query templates for better performance."
             )
 
-        semantic_feedback = "\n\n".join(feedback_parts) if feedback_parts else ""
+        additional_context = "\n\n".join(feedback_parts) if feedback_parts else ""
+
+        # Get schema context for the tables used in this SQL
+        schema_context = self._get_schema_context_for_validation(generated_sql)
 
         # Load SQL validator prompt
         prompt = self.prompt_manager.get_agent_prompt(
             "sql_validator",
             variables={
-                "user_query": query,
+                "original_query": query,  # Changed from user_query to match prompt
                 "sql_query": generated_sql,
-                "table_schema": table_schemas,
+                "schema_context": schema_context,  # Changed from table_schema - now provides relevant table schemas only
                 "user_id": user_id,
                 "previous_feedback": (previous_feedback or "No previous feedback") +
-                                   ("\n\n" + semantic_feedback if semantic_feedback else "")
+                                   ("\n\n" + additional_context if additional_context else "")
             }
         )
 
@@ -2110,13 +2111,31 @@ This query is part of a larger multi-intent question that was decomposed into fo
 
         logger.info("🔧 Analyzing SQL validation failure for correction recommendations...")
 
+        # Sanitize validation_feedback to prevent JSON contamination in LLM response
+        sanitized_feedback = validation_feedback
+        if validation_feedback:
+            # Escape characters that could break JSON generation
+            sanitized_feedback = (
+                validation_feedback
+                .replace('\\', '\\\\')  # Escape backslashes first
+                .replace('"', '\\"')    # Escape quotes
+                .replace('\n', '\\n')   # Escape newlines
+                .replace('\r', '\\r')   # Escape carriage returns
+                .replace('\t', '\\t')   # Escape tabs
+            )
+
+            # Truncate if too long (prevents prompt overflow)
+            if len(sanitized_feedback) > 2000:
+                sanitized_feedback = sanitized_feedback[:2000] + "... (truncated)"
+                logger.debug(f"Truncated validation feedback from {len(validation_feedback)} to 2000 chars")
+
         # Load SQL corrector prompt
         prompt = self.prompt_manager.get_agent_prompt(
             "sql_corrector",
             variables={
                 "user_query": query,
                 "generated_sql": generated_sql,
-                "validation_feedback": validation_feedback,
+                "validation_feedback": sanitized_feedback,  # Use sanitized version
                 "table_schemas": table_schemas,
                 "user_id": user_id,
             }
@@ -2150,34 +2169,63 @@ This query is part of a larger multi-intent question that was decomposed into fo
             except json.JSONDecodeError as e:
                 # Still failed - create minimal recommendations
                 logger.warning(f"SQL corrector parsing failed: {e}")
+                logger.debug(f"Failed content: {content[:500]}")  # Debug log for diagnostics
                 recommendations = {
                     "error_category": "UNKNOWN",
                     "specific_issues": [
                         {
                             "issue": "Validation failed",
                             "location": "Unknown",
-                            "reason": validation_feedback
+                            "reason": validation_feedback[:500]  # Truncate to prevent issues
                         }
                     ],
                     "fix_recommendations": [
                         {
                             "step": 1,
                             "action": "Review validation feedback and regenerate SQL",
-                            "reasoning": validation_feedback,
+                            "reasoning": validation_feedback[:500],
                             "corrected_snippet": ""
                         }
                     ],
                     "summary": "Review validation feedback and fix errors"
                 }
 
-        # Log recommendations
-        error_category = recommendations.get("error_category", "UNKNOWN")
-        summary = recommendations.get("summary", "No summary")
-        logger.info(f"   Error Category: {error_category}")
-        logger.info(f"   Fix Summary: {summary}")
+        # Type validation - ensure recommendations is a dict
+        if not isinstance(recommendations, dict):
+            logger.error(
+                f"Invalid recommendations type: {type(recommendations).__name__}, "
+                f"content: {str(recommendations)[:200]}"
+            )
+            recommendations = {
+                "error_category": "UNKNOWN",
+                "specific_issues": [{"issue": "LLM returned non-dict response", "location": "parser", "reason": "Type error"}],
+                "fix_recommendations": [{"step": 1, "action": "Regenerate SQL with validation feedback", "reasoning": "Parser error", "corrected_snippet": ""}],
+                "summary": "Correction parsing failed - using fallback"
+            }
 
-        num_fixes = len(recommendations.get("fix_recommendations", []))
-        logger.info(f"   Recommendations: {num_fixes} fix step(s)")
+        # Debug logging
+        logger.debug(f"Parsed recommendations type: {type(recommendations)}")
+        try:
+            import json as json_module
+            logger.debug(f"Recommendations preview: {json_module.dumps(recommendations, indent=2)[:300]}...")
+        except:
+            pass  # Skip if debug logging fails
+
+        # Safely extract recommendation details with error handling
+        try:
+            error_category = recommendations.get("error_category", "UNKNOWN")
+            summary = recommendations.get("summary", "No summary")
+            logger.info(f"   Error Category: {error_category}")
+            logger.info(f"   Fix Summary: {summary}")
+
+            num_fixes = len(recommendations.get("fix_recommendations", []))
+            logger.info(f"   Recommendations: {num_fixes} fix step(s)")
+        except (AttributeError, TypeError) as e:
+            # Fallback if recommendations dict access fails
+            logger.error(f"Error accessing recommendations dict: {e}")
+            error_category = "UNKNOWN"
+            summary = "Failed to access correction recommendations"
+            num_fixes = 0
 
         return {
             "sql_correction_recommendations": recommendations,

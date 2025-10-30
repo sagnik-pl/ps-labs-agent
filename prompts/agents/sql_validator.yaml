@@ -24,20 +24,35 @@ prompt: |
 
   ## Query to Validate
 
-  **User's Original Query**: {user_query}
+  **User's Original Query**: {original_query}
 
   **Generated SQL Query**:
   ```sql
   {sql_query}
   ```
 
-  **Available Tables Schema**: {table_schema}
+  **Available Tables Schema**:
+  {schema_context}
 
   **User ID**: {user_id}
 
   **Previous Validation Feedback** (if retry): {previous_feedback}
 
-  ## Schema-Based Validation Process
+  ## Validation Process: Semantic Correctness FIRST
+
+  **PRIORITY #1: SEMANTIC VALIDATION** - Does the SQL answer the user's question?
+
+  Before checking syntax or columns, validate the high-level logic:
+  - Does the SQL retrieve the data the user asked for?
+  - Are calculations/metrics correct for what user requested?
+  - Does time filtering match user's intent (e.g., "last 30 days", "October")?
+  - Is the data granularity appropriate (post-level vs account-level)?
+  - Are the selected tables appropriate for the question?
+
+  **Example**: If user asks "Show my Instagram posts", SQL must use `instagram_media` table (not `instagram_media_insights`).
+  **Example**: If user asks "Calculate engagement rate", verify formula: `(likes + comments + saved + shares) * 100.0 / NULLIF(reach, 0)`
+
+  ---
 
   Use the following 4-step inspection flow to systematically validate the query:
 
@@ -53,22 +68,27 @@ prompt: |
   - ❌ E-commerce question using Instagram tables
   - ❌ Mixing unrelated data streams without clear reason
 
-  ### Step 2: Verify Table Selection Appropriateness
+  ### Step 2: Verify Table Selection Appropriateness (SEMANTIC CHECK)
 
-  Examine if the selected tables are appropriate for the user's question:
-  - Review each table's **use_cases** in the schema
-  - Check if the table's **description** matches the query intent
-  - Verify the question can be answered with the selected tables
+  **CRITICAL**: Examine if the selected tables match the user's question intent.
+
+  **How to validate**:
+  1. Look at the **user's original query** - what data are they asking for?
+  2. Check each table's **use_cases** in the schema - does it provide that data?
+  3. Verify the table's **description** matches the query intent
+  4. Confirm the question CAN be answered with these tables
+
+  **Examples of correct table selection**:
+  - ✅ User asks "Show my posts" → Uses `instagram_media` (content metadata)
+  - ✅ User asks "Engagement metrics" → Uses `instagram_media_insights` (metrics)
+  - ✅ User asks "Top performing posts" → JOINs both tables (content + metrics)
 
   **Examples of incorrect table selection**:
-  - ❌ Using `instagram_media` for engagement metrics (should use `instagram_media_insights`)
-  - ❌ Using `instagram_user_insights` for demographics (should use `instagram_user_lifetime_insights`)
-  - ❌ Using post-level table for account-level metrics
+  - ❌ User asks "Show posts" but SQL uses only `instagram_media_insights` (no content data)
+  - ❌ User asks "Account demographics" but uses `instagram_user_insights` (wrong table)
+  - ❌ User asks "Post-level data" but uses account-level table
 
-  **Validation**:
-  - Does each table's use_cases align with what the user asked?
-  - Is there a better table that matches the intent more closely?
-  - Are all necessary tables included?
+  **Key Principle**: Trust the SQL generator's table choice UNLESS it clearly contradicts the user's question.
 
   ### Step 3: Verify Column Selection & Correctness
 
@@ -112,25 +132,34 @@ prompt: |
 
   Carefully validate the SQL query against all criteria above and below.
 
-  ### Critical Checks (Must Pass)
+  ### Critical Checks (Must Pass) - IN PRIORITY ORDER
 
-  1. **User Isolation** ⚠️
+  **PRIORITY #1: Semantic Correctness** 🎯
+     - Does the SQL answer the user's original question?
+     - Are the tables appropriate for what user asked?
+     - Are calculations/metrics correct?
+     - Does time filtering match user's intent?
+     - **If semantically wrong, mark is_valid: false even if syntax is perfect**
+
+  **PRIORITY #2: User Isolation** ⚠️
      - Does query filter by user_id = '{user_id}'?
      - For JOINs, does it join on user_id as well as id?
      - This is CRITICAL for data security and isolation
 
-  2. **Table/Column Existence**
-     - Do all tables exist?
-     - **IMPORTANT**: Trust the semantic layer schema provided - if a column is listed in the schema, it EXISTS
-     - The semantic layer schema is the authoritative source for column definitions
-     - Only flag column errors if the column is definitively NOT in the provided schema
+  **PRIORITY #3: Table/Column Existence**
+     - Do all tables exist in the provided schema?
+     - Do all columns exist in their respective tables?
+     - **IMPORTANT**: Trust the semantic layer schema provided - if a column is listed in the schema for a table, it EXISTS
+     - **Parse the SQL** to determine which table each column comes from (look at aliases: `m.caption` comes from table aliased as `m`)
+     - Only flag column errors if column is NOT in the schema for its source table
+     - **Common mistake**: Don't validate columns from `instagram_media` against `instagram_media_insights` schema!
 
-  3. **SQL Syntax**
+  **PRIORITY #4: SQL Syntax**
      - Valid SQL syntax?
      - Correct operators, quotes, keywords?
      - Proper GROUP BY for aggregations?
 
-  4. **Query Completeness**
+  **PRIORITY #5: Query Completeness**
      - Does it fully answer the user's question?
      - Are all necessary columns selected?
      - Are required JOINs present?
